@@ -2,7 +2,7 @@
 Live Multi-Source Web Scraper for Interview Intelligence Platform.
 Performs real-time, live web collection of authentic interview questions from public developer
 discussions, HackerNews Algolia real-time index, and engineering interview archives without paid APIs.
-Strictly filters out conversational discussions, quotes, article headlines, and synthetic duplicates.
+Enforces hard REJECT for noise, strict HTML/markdown stripping, atomicity, and accurate metadata attribution.
 """
 
 import httpx
@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from database.repository import get_db_repository
 from models.model_manager import get_model_manager
-from models.fallback_models import FallbackNLPModel, strip_question_wrappers, get_dedup_hash
+from models.fallback_models import FallbackNLPModel, strip_question_wrappers, get_dedup_hash, CANONICAL_CATEGORIES
 from core.logging import logger
 
 # Curated list of high-value public tech companies to cycle through
@@ -29,31 +29,31 @@ TECH_GIANTS_AND_STARTUPS = [
 GITHUB_ARCHIVES = [
     {
         "url": "https://raw.githubusercontent.com/donnemartin/system-design-primer/master/README.md",
-        "company": "Google",
+        "archive_domain": "System Architecture & Design",
         "category": "System Design",
         "platform": "System Design Primer Archive",
     },
     {
         "url": "https://raw.githubusercontent.com/kdn251/interviews/master/README.md",
-        "company": "Amazon",
+        "archive_domain": "Core Algorithms & Data Structures",
         "category": "Data Structures and Algorithms",
         "platform": "GitHub Tech Interviews Archive",
     },
     {
         "url": "https://raw.githubusercontent.com/bregman-arie/devops-exercises/master/topics/linux/README.md",
-        "company": "Meta",
+        "archive_domain": "Systems & Linux Kernel",
         "category": "Operating Systems",
         "platform": "DevOps & Systems Exercises Archive",
     },
     {
         "url": "https://raw.githubusercontent.com/bregman-arie/devops-exercises/master/topics/networking/README.md",
-        "company": "Cisco",
+        "archive_domain": "Computer Networks & Protocols",
         "category": "Computer Networks",
         "platform": "DevOps & Networking Exercises Archive",
     },
     {
         "url": "https://raw.githubusercontent.com/bregman-arie/devops-exercises/master/topics/databases/README.md",
-        "company": "Oracle",
+        "archive_domain": "Database Engines & SQL",
         "category": "DBMS and SQL",
         "platform": "DevOps & Database Exercises Archive",
     },
@@ -79,6 +79,13 @@ GARBAGE_PATTERNS = [
     r"levels\.fyi",
     r"i recently completed my .* interview",
     r"round 1 was .* round 2 was",
+    r"do you think .* would be tolerated",
+    r"male-only hiring",
+    r"why are interviews broken",
+    r"^how would you do\??$",
+    r"^what about\??$",
+    r"^any thoughts\??$",
+    r"^can you explain\??$",
 ]
 
 
@@ -93,11 +100,21 @@ class LiveWebScraper:
         }
 
     def _clean_html(self, raw_html: str) -> str:
-        """Strips HTML tags and unescapes HTML entities."""
+        """Strips HTML tags, summary/details markers, code formatting, and markdown artifacts."""
         if not raw_html:
             return ""
-        clean = re.sub(r"<[^<]+?>", " ", raw_html)
+        # Strip details / summary wrappers specifically
+        clean = re.sub(r"</?(?:details|summary|code|b|i|strong|em|br|p|div|span|table|tr|td|th|ul|li|ol|h[1-6]|a|img)[^>]*>", " ", raw_html, flags=re.IGNORECASE)
+        # Strip any other remaining tags
+        clean = re.sub(r"<[^>]+?>", " ", clean)
         clean = html.unescape(clean)
+        # Strip markdown links [text](url) -> text
+        clean = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", clean)
+        # Strip markdown images ![alt](url)
+        clean = re.sub(r"!\[[^\]]*\]\([^\)]+\)", " ", clean)
+        # Strip code backticks
+        clean = re.sub(r"`{1,3}", "", clean)
+        # Collapse whitespace
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
 
@@ -123,6 +140,22 @@ class LiveWebScraper:
             return "Easy"
         return "Medium"
 
+    def _infer_role_from_category(self, category: str, requested_role: str = "") -> str:
+        """Assigns accurate craft job role based on topic category to prevent blind role hallucination."""
+        if category == "Product Management":
+            return "Senior Product Manager"
+        if category in ["Operating Systems", "Computer Networks"]:
+            return "Systems & Infrastructure Software Engineer"
+        if category == "DBMS and SQL":
+            return "Backend & Database Engineer"
+        if category == "Machine Learning":
+            return "Machine Learning Engineer"
+        if category == "UI/UX Design":
+            return "Lead Product Designer"
+        if requested_role and requested_role.strip().lower() not in ["", "all", "all roles", "general"]:
+            return requested_role.strip()
+        return "Software Development Engineer II"
+
     def _is_valid_technical_question(self, text: str) -> bool:
         """Strictly validates whether candidate text is an actual technical question/prompt."""
         t = text.strip()
@@ -130,7 +163,7 @@ class LiveWebScraper:
             return False
 
         t_low = t.lower()
-        # Reject conversational garbage / article titles
+        # Reject conversational garbage, forum rants, and article titles
         for pat in GARBAGE_PATTERNS:
             if re.search(pat, t_low):
                 return False
@@ -156,14 +189,17 @@ class LiveWebScraper:
         return (has_action or has_qmark) and has_tech
 
     def _extract_questions_from_text(self, text: str, default_company: str = "Google") -> List[Dict[str, Any]]:
-        """Extracts substantive interview questions from free-form text or markdown."""
+        """Extracts substantive atomic interview questions from free-form text or markdown."""
         questions = []
         if not text:
             return questions
 
-        sentences = re.split(r"(?<=[.!?\n])\s+", text)
+        # Clean raw html/markdown noise first
+        clean_text = self._clean_html(text)
 
-        candidate_buffer = []
+        # Split into sentences or lines
+        sentences = re.split(r"(?<=[.!?\n])\s+", clean_text)
+
         for s in sentences:
             s_clean = s.strip()
             if not s_clean:
@@ -197,7 +233,7 @@ class LiveWebScraper:
     ) -> Dict[str, Any]:
         """
         Executes live web scraping across public developer indexes for the specified company/query.
-        Supports unlimited or large-batch extraction across multiple pages and queries without artificial caps.
+        Enforces strict company attribution and craft role derivation.
         """
         is_all = not company or company.strip().lower() in ["all", "all companies", "all mncs", "all startups", ""]
         comp_target = "Google" if is_all else company.strip()
@@ -239,7 +275,6 @@ class LiveWebScraper:
                             if not hits:
                                 break
                             for h in hits:
-                                # ONLY process comments that contain actual text, NEVER naked story titles
                                 raw_body = h.get("comment_text") or h.get("story_text") or ""
                                 clean_body = self._clean_html(raw_body)
                                 if len(clean_body) >= 50:
@@ -250,7 +285,8 @@ class LiveWebScraper:
                                         "text": clean_body,
                                         "url": hit_url,
                                         "platform": "HackerNews Public Live Index",
-                                        "company": comp_target,
+                                        "is_archive": False,
+                                        "explicit_company": comp_target if comp_target.lower() in clean_body.lower() else None,
                                     })
                     except Exception as e:
                         logger.warning(f"Live web scrape query '{term}' p.{page} encountered: {e}")
@@ -258,26 +294,27 @@ class LiveWebScraper:
 
             # 2. Ingest from high-yield GitHub Open Interview Repositories if batch is requested
             for arch in GITHUB_ARCHIVES:
-                if is_all or arch["company"].lower() == comp_target.lower():
-                    try:
-                        res = await client.get(arch["url"])
-                        if res.status_code == 200 and len(res.text) > 500:
-                            extracted_raw_records.append({
-                                "title": arch["platform"],
-                                "text": res.text[:60000],
-                                "url": arch["url"],
-                                "platform": arch["platform"],
-                                "company": comp_target if not is_all else arch["company"],
-                            })
-                    except Exception as e:
-                        logger.warning(f"Archive fetch for {arch['url']} failed: {e}")
+                try:
+                    res = await client.get(arch["url"])
+                    if res.status_code == 200 and len(res.text) > 500:
+                        extracted_raw_records.append({
+                            "title": arch["platform"],
+                            "text": res.text[:60000],
+                            "url": arch["url"],
+                            "platform": arch["platform"],
+                            "is_archive": True,
+                            "archive_domain": arch["archive_domain"],
+                            "explicit_company": None,
+                        })
+                except Exception as e:
+                    logger.warning(f"Archive fetch for {arch['url']} failed: {e}")
 
         # Parse questions from all collected documents
         candidate_questions = []
         seen_hashes = set()
 
         for rec in extracted_raw_records:
-            qs = self._extract_questions_from_text(rec["text"], rec.get("company", comp_target))
+            qs = self._extract_questions_from_text(rec["text"], comp_target)
             for q in qs:
                 q_text = q["question_text"]
                 q_hash = get_dedup_hash(q_text)
@@ -286,11 +323,18 @@ class LiveWebScraper:
                 seen_hashes.add(q_hash)
 
                 cls = self.nlp.classify_question(q_text)
-                target_company_name = rec.get("company") or comp_target
+
+                # Strict metadata attribution (Prevent blind company & role hallucination)
+                if rec.get("is_archive"):
+                    assigned_company = comp_target if is_all else (comp_target if comp_target.lower() in q_text.lower() else rec.get("archive_domain", "Core Systems & Algorithms"))
+                else:
+                    assigned_company = rec.get("explicit_company") or (comp_target if comp_target.lower() in q_text.lower() else "Core Technical Practice")
+
+                assigned_role = self._infer_role_from_category(cls["category"], role)
 
                 candidate_questions.append({
-                    "company_name": target_company_name,
-                    "job_role": role or "Software Development Engineer",
+                    "company_name": assigned_company,
+                    "job_role": assigned_role,
                     "question_text": q_text,
                     "question_category": cls["category"],
                     "difficulty": q["difficulty"],

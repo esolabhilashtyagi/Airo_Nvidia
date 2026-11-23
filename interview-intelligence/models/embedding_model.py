@@ -4,10 +4,14 @@ Generates 384-dimensional dense vectors using all-MiniLM-L6-v2 or deterministic 
 No paid API dependencies.
 """
 
+import os
 import math
 import hashlib
 from typing import List, Optional
 from core.logging import logger
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 _st_model = None
 _st_load_attempted = False
@@ -19,7 +23,7 @@ def _get_sentence_transformer():
         _st_load_attempted = True
         try:
             from sentence_transformers import SentenceTransformer
-            _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+            _st_model = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
             logger.info("Loaded local SentenceTransformer model: all-MiniLM-L6-v2")
         except Exception as e:
             logger.info(f"SentenceTransformers local load deferred ({e}). Using deterministic 384-dim semantic projection.")

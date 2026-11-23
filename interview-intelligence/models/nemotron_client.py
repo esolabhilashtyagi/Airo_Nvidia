@@ -19,9 +19,10 @@ class NemotronLocalClient:
         self.client = httpx.AsyncClient(timeout=30.0)
 
     async def is_available(self) -> bool:
-        """Verifies whether the local Ollama runtime is reachable."""
+        """Verifies whether the local Ollama runtime is reachable with sub-second fail-fast timeout."""
         try:
-            resp = await self.client.get(f"{self.base_url}/api/tags", timeout=0.8)
+            fast_timeout = httpx.Timeout(0.3, connect=0.3)
+            resp = await self.client.get(f"{self.base_url}/api/tags", timeout=fast_timeout)
             return resp.status_code == 200
         except Exception:
             return False

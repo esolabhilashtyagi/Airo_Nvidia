@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from core.config import settings
 from core.logging import logger
 from .nemotron_client import NemotronLocalClient
-from .fallback_models import FallbackNLPModel
+from .fallback_models import FallbackNLPModel, CANONICAL_CATEGORIES, strip_question_wrappers
 from .embedding_model import LocalEmbeddingModel
 
 
@@ -52,32 +52,71 @@ class ModelManager:
         }
 
     async def extract_experience(self, text: str, source_url: str = "") -> Dict[str, Any]:
-        """Runs Nemotron if reachable, otherwise uses high-precision heuristic fallback."""
+        """
+        Runs Nemotron with strict data hygiene and hard REJECT escape hatch.
+        Rejects blog headlines, HN rants, forum chatter, and generic trivia.
+        Falls back to deterministic fallback model if offline.
+        """
         if self._llm_active is None:
             await self.check_hardware_and_model_status()
 
         if self._llm_active:
             schema = """{
+                "valid": true,
+                "rejection_reason": "none",
                 "company_name": "string",
                 "job_role": "string",
                 "interview_round": "string",
                 "experience_level": "string",
                 "questions": ["string"]
             }"""
-            prompt = f"Extract company, role, interview round, experience level, and questions asked from this text:\n{text}"
+            prompt = (
+                "You are an expert technical interview extraction system with strict data hygiene.\n"
+                "CRITICAL EXTRACTION & HYGIENE RULES:\n"
+                "1. HARD REJECT ESCAPE HATCH: If the text is a blog headline, article title, forum rant/debate, "
+                "opinion piece, README table of contents, interview preparation guide, or generic discussion rather "
+                "than a concrete technical interview problem, you MUST return {\"valid\": false, \"rejection_reason\": \"not_an_interview_question\", \"questions\": []}.\n"
+                "2. NO BOILERPLATE FRAMING: Do NOT add framing prefixes (e.g. 'In an interview for...', 'Company: ...', '[Technical Round X]'). "
+                "Do NOT add trailing boilerplate (e.g. 'Discuss architectural trade-offs and edge cases.'). Return ONLY the standalone question.\n"
+                "3. ATOMIC QUESTIONS: If the input has multiple rounds or problems, return each atomic question as a separate item. Never output a multi-round summary paragraph.\n"
+                "4. STRIP HTML: Strip raw HTML/markdown tags (<summary>, <details>, etc.) completely.\n\n"
+                f"Input Text:\n{text}"
+            )
             res = await self.nemotron.extract_structured_json(prompt, schema)
-            if res and res.get("questions"):
-                return res
+            if res:
+                if not res.get("valid", True) or res.get("rejection_reason") in ["not_an_interview_question", "noise", "rant", "headline"]:
+                    return {"valid": False, "questions": [], "rejection_reason": res.get("rejection_reason", "rejected")}
+                raw_qs = res.get("questions", [])
+                clean_qs = [strip_question_wrappers(q) for q in raw_qs if len(strip_question_wrappers(q)) >= 20]
+                if clean_qs:
+                    res["questions"] = clean_qs
+                    res["valid"] = True
+                    return res
+                else:
+                    return {"valid": False, "questions": [], "rejection_reason": "no_valid_questions_found"}
 
         return self.fallback.extract_interview_entities(text, source_url)
 
     async def classify(self, question_text: str) -> Dict[str, str]:
-        """Classifies category and difficulty."""
+        """
+        Classifies category strictly within canonical whitelist enum and infers difficulty.
+        Zero unconstrained categories or '* Domain' bugs.
+        """
         if self._llm_active:
-            schema = '{"category": "string", "difficulty": "Easy|Medium|Hard"}'
-            prompt = f"Classify this interview question into topic and difficulty:\n{question_text}"
+            cat_enum = "|".join(CANONICAL_CATEGORIES)
+            schema = f'{{"category": "{cat_enum}", "difficulty": "Easy|Medium|Hard"}}'
+            prompt = (
+                "Classify this technical interview question into EXACTLY ONE canonical category from the list and its difficulty:\n"
+                f"Canonical Categories: {', '.join(CANONICAL_CATEGORIES)}\n\n"
+                "RULES:\n"
+                "- Do NOT invent new categories. Never append 'Domain' to words.\n"
+                "- Questions with metric trees, north star, DAU/MAU -> 'Product Management'.\n"
+                "- Questions with rate limiters, token buckets, sliding window counters -> 'System Design'.\n"
+                "- Questions with thread-safe caches, pub-sub, LLD, machine coding -> 'Object-Oriented Programming'.\n\n"
+                f"Question:\n{question_text}"
+            )
             res = await self.nemotron.extract_structured_json(prompt, schema)
-            if res and "category" in res and "difficulty" in res:
+            if res and res.get("category") in CANONICAL_CATEGORIES and res.get("difficulty") in ["Easy", "Medium", "Hard"]:
                 return res
 
         return self.fallback.classify_question(question_text)
@@ -86,7 +125,11 @@ class ModelManager:
         """Verifies candidate authenticity and confidence score."""
         if self._llm_active:
             schema = '{"is_first_person": bool, "is_suspicious": bool, "confidence_score": float, "flags": ["string"]}'
-            prompt = f"Analyze whether this text is an authentic first-person interview experience:\n{text}"
+            prompt = (
+                "Analyze whether this text represents an authentic, real-world technical interview experience:\n"
+                "Reject generic tutorials, textbook questions without interview context, or theoretical debates.\n\n"
+                f"Text:\n{text}"
+            )
             res = await self.nemotron.extract_structured_json(prompt, schema)
             if res and "confidence_score" in res:
                 res["verification_method"] = "NVIDIA_NEMOTRON_LLM"
