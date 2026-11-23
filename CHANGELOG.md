@@ -4,6 +4,36 @@ This is the primary tracker for all architecture decisions, backend enhancements
 
 ---
 
+## [Release 1.7.0] - Zero-Spam Pipeline Architecture & Prompt Hygiene Hardening
+
+### 1. Hard REJECT Escape Hatch for Non-Questions (`models/model_manager.py`)
+- **Root Cause Eliminated**: Extraction prompts previously forced models to output a structured question record for any input chunk.
+- **Escape Hatch Contract**: Added mandatory `valid: bool` and `rejection_reason` schema fields. When inputs are blog headlines, forum debates/rants, or tables of contents, the system immediately returns `{"valid": false, "questions": []}` rather than fabricating or rewriting questions.
+
+### 2. Elimination of Boilerplate Framing That Defeated Deduplication
+- **Root Cause Eliminated**: Prompts previously instructed the model to prepend/append role/company wrappers (`In an interview for [Role] at [Company]: ... Discuss architectural trade-offs and edge cases.`).
+- **Clean Atomicity**: Enforced strict rules requiring models to output ONLY standalone, atomic problem statements with zero meta-wrappers, ensuring deterministic SHA-256 and vector deduplication.
+
+### 3. Deletion of Combinatorial Parameter Augmentation
+- **Script Eradicated**: Permanently deleted `scripts/generate_mass_questions.py`, which synthetically varied numeric parameters across identical question archetypes.
+- **Number Masking (`<NUM>`)**: Hash generation masks numeric quantities (`50M vs 1B`, `100 vs 50,000`) so synthetic numerical variations collapse into a single canonical record.
+
+### 4. Strictly Constrained Category Enum
+- **Root Cause Eliminated**: Unconstrained category string fields allowed models and fallbacks to invent categories with `<Word> Domain`.
+- **Strict Canonical Whitelist**: Category classification is strictly locked to the 13 canonical enum categories:
+  `Arrays and Strings`, `Trees and Graphs`, `Dynamic Programming`, `System Design`, `Object-Oriented Programming`, `Operating Systems`, `DBMS and SQL`, `Computer Networks`, `Machine Learning`, `Product Management`, `HR and Behavioral`, `Linked Lists`, `Data Structures and Algorithms`.
+
+### 5. Accurate Metadata Attribution (Zero Blind Inheritance)
+- **Scraper Hardening (`collectors/live_web_scraper.py`)**:
+  - General archive questions (e.g. Linux kernel trivia, networking protocols) are attributed to their true system archive domain, never falsely labeled as target companies (e.g. Atlassian) unless explicitly mentioned in the text.
+  - Job roles are inferred from topic craft (e.g., metric trees $\rightarrow$ `Senior Product Manager`, kernel/protocols $\rightarrow$ `Systems Software Engineer`) rather than blindly inheriting SDE.
+
+### 6. HTML/Markdown Cleanup & Atomicity Enforcement
+- Robust regex stripping of all `<details>`, `<summary>`, `<code>`, `<a>`, `<b>`, `<br>` tags and markdown link artifacts.
+- Incomplete rhetorical fragments (`"How would you do?"`, `"What about?"`) and unsplit multi-round recaps are automatically dropped.
+
+---
+
 ## [Release 1.6.2] - Maximum Relevant Questions Engine (Role + Company + YoE + Skills)
 
 ### 1. Dedicated Maximum Relevance Mode
