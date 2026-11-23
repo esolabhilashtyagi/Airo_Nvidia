@@ -1,0 +1,56 @@
+Round,Interview Round,Company" in line:
+            data = json.loads(line)
+            # Find the CSV string inside data
+            def search_dict(d):
+                if isinstance(d, str):
+                    if "Round,Interview Round,Company" in d:
+                        return d
+                elif isinstance(d, dict):
+                    for v in d.values():
+                        res = search_dict(v)
+                        if res: return res
+                elif isinstance(d, list):
+                    for v in d:
+                        res = search_dict(v)
+                        if res: return res
+                return None
+
+            csv_text = search_dict(data)
+            if csv_text:
+                csv_start = csv_text.find("Round,Interview Round,Company")
+                clean_csv = csv_text[csv_start:]
+                out_csv = os.path.join(os.path.dirname(__file__), "user_exported_dataset.csv")
+                with open(out_csv, "w", encoding="utf-8") as out:
+                    out.write(clean_csv)
+                print(f"Saved {len(clean_csv)} chars of CSV to {out_csv}")
+
+                reader = csv.DictReader(io.StringIO(clean_csv))
+                questions = []
+                for row in reader:
+                    q = row.get("Question", "").strip()
+                    if not q: continue
+                    try:
+                        r_num = int(row.get("Round", 1))
+                    except Exception:
+                        r_num = 1
+                    questions.append({
+                        "company_name": row.get("Company", "Technology Firm").strip(),
+                        "job_role": row.get("Role", "Software Development Engineer").strip(),
+                        "question_text": q,
+                        "question_category": row.get("Category", "Technical Domain").strip(),
+                        "difficulty": row.get("Difficulty", "Medium").strip(),
+                        "round_number": r_num,
+                        "interview_round": row.get("Interview Round", f"Round {r_num}").strip(),
+                        "source_platform": row.get("Platform", "Imported Dataset").strip(),
+                        "original_url": row.get("URL", "").strip(),
+                        "confidence_score": 0.98,
+                        "skills_tested": [row.get("Category", "Technical Domain").strip(), "Problem Solving"],
+                    })
+                print(f"Parsed {len(questions)} questions from CSV.")
+                db = get_db_repository()
+                inserted = db.bulk_insert_questions(questions, batch_size=200)
+                print(f"Successfully inserted {inserted} new unique questions into DB!")
+                analytics = db.get_analytics_summary()
+                print(f"Total Database Corpus is now: {analytics.get('total_questions', 0):,} verified questions!")
+                return
+            break
