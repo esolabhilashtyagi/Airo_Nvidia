@@ -176,10 +176,10 @@ export function QuestionBankPage() {
       setTargetSkills('Kubernetes, Docker, Terraform, CI/CD, Linux Internals, Observability, AWS/Azure');
     } else if (rLower.includes('backend') || rLower.includes('systems') || rLower.includes('distributed')) {
       setTargetSkills('Go, Distributed Systems, Concurrency, Kafka, PostgreSQL, Microservices, gRPC');
+    } else if (rLower.includes('design') || rLower.includes('ux') || rLower.includes('ui/ux') || rLower.includes('product design')) {
+      setTargetSkills('Figma, Design Systems, User Research, Wireframing, Interaction Design, Prototyping, Usability Testing');
     } else if (rLower.includes('product') || rLower.includes('pm')) {
       setTargetSkills('Product Strategy, User Empathy, Metrics & KPIs, A/B Testing, Prioritization, PRDs');
-    } else if (rLower.includes('design') || rLower.includes('ux')) {
-      setTargetSkills('Figma, Design Systems, User Research, Wireframing, Interaction Design, Prototyping');
     } else if (rLower.includes('security') || rLower.includes('cyber') || rLower.includes('infosec')) {
       setTargetSkills('Threat Modeling, OWASP, Penetration Testing, IAM, Cryptography, SOC2 Compliance');
     } else if (rLower.includes('sales') || rLower.includes('commercial')) {
@@ -364,7 +364,12 @@ export function QuestionBankPage() {
           companyIntelApi.listCategories(selectedCompany),
         ]);
         if (mounted) {
-          if (roles?.length) setAvailableRoles(roles);
+          if (roles?.length) {
+            setAvailableRoles(roles);
+            if (targetRole !== 'custom' && !roles.includes(targetRole)) {
+              handleRoleChange(roles[0]);
+            }
+          }
           if (cats?.length) setAvailableCategories(cats);
         }
       } catch (e) {
@@ -750,7 +755,7 @@ export function QuestionBankPage() {
               <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
                 <span className="font-semibold text-slate-800">Role:</span>
                 <select
-                  value={targetRole}
+                  value={availableRoles.includes(targetRole) ? targetRole : (targetRole === 'custom' ? 'custom' : (availableRoles[0] || 'custom'))}
                   onChange={(e) => handleRoleChange(e.target.value)}
                   className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
                 >
