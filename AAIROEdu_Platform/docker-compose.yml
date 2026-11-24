@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aairo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aairo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aairo_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aairo_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aairo_user} -d ${POSTGRES_DB:-aairo_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aairo-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-aairo_user}:${POSTGRES_PASSWORD:-aairo_secure_password}@postgres:5432/${POSTGRES_DB:-aairo_db}
+      - DATABASE_URL_SYNC=postgresql://${POSTGRES_USER:-aairo_user}:${POSTGRES_PASSWORD:-aairo_secure_password}@postgres:5432/${POSTGRES_DB:-aairo_db}
+      - ALEMBIC_ALLOWED_DB=${POSTGRES_DB:-aairo_db}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env; generate a value with openssl rand -hex 32}
+      - AI_PROVIDER=${AI_PROVIDER:-nvidia}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - NVIDIA_MODEL=${NVIDIA_MODEL:-nvidia/nemotron-3.5-lightning-30b-a3b}
+      - NVIDIA_BASE_URL=${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+      - OPENALEX_BASE_URL=${OPENALEX_BASE_URL:-https://api.openalex.org}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - SMTP_USE_SSL=${SMTP_USE_SSL:-False}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-True}
+      - SMTP_TIMEOUT_SECONDS=${SMTP_TIMEOUT_SECONDS:-15}
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost:3000}
+      - UPLOAD_DIR=/app/uploads
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aairo-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
+    driver: local

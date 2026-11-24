@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+backups/
+.qa-credentials
+**/__pycache__/
+**/*.py[cod]
+**/node_modules/
+**/venv/
+**/.venv/
+**/dist/

@@ -1,0 +1,950 @@
+import { RequiredLabel } from '../../components/common/RequiredMark';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Bookmark, Search, ArrowRight, AlertCircle } from 'lucide-react';
+import { questionsApi, companyIntelApi } from '../../api/services';
+import type {
+  Question,
+  QuestionPracticeResult,
+  QuestionPracticeHistory,
+  CompanyInterviewQuestion,
+  CompanySummary,
+  CompanyBlueprint,
+} from '../../types';
+
+const provenanceLabel: Record<Question['source_provenance'], string> = {
+  source_verified: 'Source verified',
+  source_formatted: 'Source formatted',
+  ai_generated: 'AI generated',
+  editorially_reviewed: 'Editorially reviewed',
+};
+
+const CANONICAL_ROUNDS = [
+  { id: '', label: 'All Rounds' },
+  { id: '1', label: 'Round 1: OA & Screening', badge: '💻 OA' },
+  { id: '2', label: 'Round 2: Core Coding (DSA)', badge: '⚡ DSA' },
+  { id: '3', label: 'Round 3: Low-Level Design (LLD)', badge: '📐 LLD' },
+  { id: '4', label: 'Round 4: System Design (HLD)', badge: '🏗️ HLD' },
+  { id: '5', label: 'Round 5: Behavioral & HR', badge: '🤝 HR' },
+];
+
+export function QuestionBankPage() {
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search')?.trim() ?? '';
+
+  // Mode: standard curriculum vs authentic company intelligence
+  const [activeTab, setActiveTab] = useState<'company' | 'standard'>('company');
+
+  // Standard Bank State
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [query, setQuery] = useState(urlSearch);
+  const [searchText, setSearchText] = useState(urlSearch);
+  const [filters, setFilters] = useState({
+    difficulty: '',
+    industry_category_id: '',
+    job_role_id: '',
+    skill_id: '',
+    subject_id: '',
+    topic_id: '',
+    experience_level_id: '',
+    company_id: '',
+    interview_round: '',
+    question_type: '',
+    bookmarked: '',
+  });
+  const [taxonomy, setTaxonomy] = useState<{
+    categories: { id: string; name: string }[];
+    job_roles: { id: string; title: string }[];
+    subjects: { id: string; name: string }[];
+    topics: { id: string; name: string; subject_id: string }[];
+    skills: { id: string; name: string }[];
+    experience_levels: { id: string; name: string }[];
+    interview_rounds: { id: string; name: string }[];
+    companies: { id: string; name: string }[];
+  }>({
+    categories: [],
+    job_roles: [],
+    subjects: [],
+    topics: [],
+    skills: [],
+    experience_levels: [],
+    interview_rounds: [],
+    companies: [],
+  });
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [history, setHistory] = useState<QuestionPracticeHistory[] | null>(null);
+  const [selected, setSelected] = useState<Question | null>(null);
+  const [answer, setAnswer] = useState('');
+  const [result, setResult] = useState<QuestionPracticeResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  // Company Intelligence State
+  const [companyQuestions, setCompanyQuestions] = useState<CompanyInterviewQuestion[]>([]);
+  const [companies, setCompanies] = useState<CompanySummary[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<string>('Google');
+  const [selectedRound, setSelectedRound] = useState<string>('');
+  const [companyCategory, setCompanyCategory] = useState<string>('');
+  const [companyDifficulty, setCompanyDifficulty] = useState<string>('');
+  const [companySearch, setCompanySearch] = useState<string>('');
+  const [companySearchInput, setCompanySearchInput] = useState<string>('');
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [companyPage, setCompanyPage] = useState(1);
+  const [companyTotal, setCompanyTotal] = useState(0);
+
+  // Blueprint Modal
+  const [blueprintModalOpen, setBlueprintModalOpen] = useState(false);
+  const [blueprintData, setBlueprintData] = useState<CompanyBlueprint | null>(null);
+  const [blueprintLoading, setBlueprintLoading] = useState(false);
+
+  // Selected Company Question Practice
+  const [selectedCompanyQ, setSelectedCompanyQ] = useState<CompanyInterviewQuestion | null>(null);
+  const [companyAnswer, setCompanyAnswer] = useState('');
+  const [companyResult, setCompanyResult] = useState<QuestionPracticeResult | null>(null);
+  const [evaluatingCompany, setEvaluatingCompany] = useState(false);
+
+  // Load Standard Questions
+  const loadQuestions = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [response, options] = await Promise.all([
+        questionsApi.listQuestions({ search: query, ...filters, page, limit: 30, sort_by: 'created_at', sort_order: 'desc' }),
+        questionsApi.taxonomy(),
+      ]);
+      setQuestions((items) => (page === 1 ? response ?? [] : [...items, ...(response ?? [])]));
+      setHasMore((response ?? []).length === 30);
+      setTaxonomy(options);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Questions could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  }, [query, filters, page]);
+
+  // Load Company Questions
+  const loadCompanyQuestions = useCallback(async () => {
+    setCompanyLoading(true);
+    try {
+      const params: Record<string, any> = {
+        company: selectedCompany,
+        round_number: selectedRound ? parseInt(selectedRound, 10) : undefined,
+        category: companyCategory || undefined,
+        difficulty: companyDifficulty || undefined,
+        search: companySearch || undefined,
+        page: companyPage,
+        limit: 25,
+      };
+      const response = await companyIntelApi.listQuestions(params);
+      setCompanyQuestions(response ?? []);
+      setCompanyTotal((response ?? []).length);
+    } catch (err) {
+      console.error('Failed to load company questions:', err);
+    } finally {
+      setCompanyLoading(false);
+    }
+  }, [selectedCompany, selectedRound, companyCategory, companyDifficulty, companySearch, companyPage]);
+
+  // Initial Load Companies Directory
+  useEffect(() => {
+    async function fetchCompanies() {
+      try {
+        const comps = await companyIntelApi.listCompanies();
+        setCompanies(comps ?? []);
+      } catch (err) {
+        console.error('Failed to list companies:', err);
+      }
+    }
+    void fetchCompanies();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'standard') {
+      void loadQuestions();
+    } else {
+      void loadCompanyQuestions();
+    }
+  }, [activeTab, loadQuestions, loadCompanyQuestions]);
+
+  useEffect(() => {
+    setQuery(urlSearch);
+    setSearchText(urlSearch);
+    setPage(1);
+  }, [urlSearch]);
+
+  async function submitAnswer() {
+    if (!selected || !answer.trim()) return;
+    try {
+      const response = await questionsApi.practiceQuestion(selected.id, answer.trim());
+      setResult(response ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Your answer could not be saved.');
+    }
+  }
+
+  async function submitCompanyAnswer() {
+    if (!selectedCompanyQ || !companyAnswer.trim()) return;
+    setEvaluatingCompany(true);
+    try {
+      const resp = await companyIntelApi.practiceQuestion(selectedCompanyQ.id, companyAnswer.trim());
+      setCompanyResult(resp ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to evaluate answer.');
+    } finally {
+      setEvaluatingCompany(false);
+    }
+  }
+
+  async function openBlueprint(compName: string) {
+    setBlueprintLoading(true);
+    setBlueprintModalOpen(true);
+    try {
+      const bp = await companyIntelApi.getBlueprint(compName);
+      setBlueprintData(bp);
+    } catch (err) {
+      console.error('Failed to fetch blueprint:', err);
+    } finally {
+      setBlueprintLoading(false);
+    }
+  }
+
+  async function toggleHistory() {
+    if (history) {
+      setHistory(null);
+      return;
+    }
+    try {
+      setHistory(await questionsApi.history());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Practice history could not be loaded.');
+    }
+  }
+
+  async function toggleBookmark(question: Question) {
+    try {
+      const response = await questionsApi.toggleBookmark(question.id);
+      setQuestions((items) =>
+        items.map((item) => (item.id === question.id ? { ...item, is_bookmarked: response.is_bookmarked } : item))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bookmark could not be updated.');
+    }
+  }
+
+  function openQuestion(question: Question) {
+    setSelected(question);
+    setAnswer('');
+    setResult(null);
+  }
+
+  function openCompanyQuestion(q: CompanyInterviewQuestion) {
+    setSelectedCompanyQ(q);
+    setCompanyAnswer('');
+    setCompanyResult(null);
+  }
+
+  return (
+    <section className="space-y-6">
+      {/* Header */}
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-violet-800">
+              Interactive Practice
+            </span>
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+              44+ Tech Companies Verified
+            </span>
+          </div>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Question Bank & Interview Intel</h1>
+          <p className="mt-1 text-slate-600">
+            Master real interview questions from Google, Meta, Amazon, and top tier-1 tech companies across Rounds 1 to 5.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {activeTab === 'company' && selectedCompany && (
+            <button
+              type="button"
+              onClick={() => void openBlueprint(selectedCompany)}
+              className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+            >
+              <span>{selectedCompany} Hiring Blueprint</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void toggleHistory()}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {history ? 'Hide History' : 'Practice History'}
+          </button>
+        </div>
+      </header>
+
+      {/* Mode Switcher Tabs */}
+      <div className="flex border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('company')}
+          className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${
+            activeTab === 'company'
+              ? 'border-violet-700 text-violet-800'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          🏢 Authentic Company Interview Intel (FAANG & Tech)
+          <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700">335+ Verified</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('standard')}
+          className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${
+            activeTab === 'standard'
+              ? 'border-violet-700 text-violet-800'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          🎓 Standard Curriculum Practice Bank
+        </button>
+      </div>
+
+      {history && (
+        <section aria-label="Practice history" className="space-y-2 rounded-xl border bg-white p-4">
+          <h2 className="font-semibold text-slate-900">Recent practice history</h2>
+          {history.length ? (
+            history.map((item) => (
+              <article key={item.id} className="rounded-lg bg-slate-50 p-3">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <p className="font-medium text-slate-800">{item.question_text}</p>
+                  <span className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-600">Your answer: {item.user_response}</p>
+                <p className="mt-1 text-xs font-medium text-slate-600">
+                  {item.evaluation_status === 'unavailable'
+                    ? 'Evaluation unavailable'
+                    : item.evaluation_provenance === 'ai'
+                    ? `AI evaluation · ${item.score_percentage ?? '—'}%`
+                    : item.score_percentage === null
+                    ? 'Saved without score'
+                    : `Deterministic result · ${item.score_percentage}%`}
+                </p>
+              </article>
+            ))
+          ) : (
+            <p className="text-sm text-slate-600">No saved practice attempts yet.</p>
+          )}
+        </section>
+      )}
+
+      {error && (
+        <div role="alert" className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* COMPANY INTERVIEW INTEL VIEW */}
+      {/* ========================================================================= */}
+      {activeTab === 'company' && (
+        <div className="space-y-5">
+          {/* Company Quick-Select Bar */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Target Tech Company</p>
+            <div className="flex flex-wrap gap-2">
+              {['Google', 'Meta', 'Amazon', 'Microsoft', 'Uber', 'Stripe', 'Netflix', 'Apple', 'NVIDIA', 'Atlassian', 'Zepto', 'Databricks', 'OpenAI', 'Figma', 'Salesforce'].map((comp) => (
+                <button
+                  key={comp}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCompany(comp);
+                    setCompanyPage(1);
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    selectedCompany.toLowerCase() === comp.toLowerCase()
+                      ? 'bg-violet-700 text-white shadow-sm'
+                      : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {comp}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Canonical 5-Round Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Rounds:</span>
+            {CANONICAL_ROUNDS.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => {
+                  setSelectedRound(r.id);
+                  setCompanyPage(1);
+                }}
+                className={`rounded-full px-3.5 py-1 text-xs font-medium transition ${
+                  selectedRound === r.id
+                    ? 'bg-violet-100 font-semibold text-violet-800 ring-2 ring-violet-600'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search & Topic Filters */}
+          <form
+            className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4 shadow-sm"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setCompanySearch(companySearchInput);
+              setCompanyPage(1);
+            }}
+          >
+            <label className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                value={companySearchInput}
+                onChange={(e) => setCompanySearchInput(e.target.value)}
+                placeholder={`Search in ${selectedCompany} questions...`}
+                className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm focus:border-violet-500 focus:outline-none"
+              />
+            </label>
+            <select
+              value={companyCategory}
+              onChange={(e) => {
+                setCompanyCategory(e.target.value);
+                setCompanyPage(1);
+              }}
+              className="rounded-lg border px-3 py-2 text-sm"
+            >
+              <option value="">All Categories & Topics</option>
+              <option value="Data Structures and Algorithms">Data Structures and Algorithms</option>
+              <option value="System Design">System Design & Architecture</option>
+              <option value="Trees and Graphs">Trees and Graphs</option>
+              <option value="Arrays and Strings">Arrays and Strings</option>
+              <option value="Dynamic Programming">Dynamic Programming</option>
+              <option value="Linked Lists">Linked Lists</option>
+              <option value="Operating Systems">Operating Systems</option>
+              <option value="Computer Networks">Computer Networks</option>
+              <option value="DBMS and SQL">DBMS and SQL</option>
+              <option value="HR and Behavioral">HR & Behavioral</option>
+            </select>
+            <select
+              value={companyDifficulty}
+              onChange={(e) => {
+                setCompanyDifficulty(e.target.value);
+                setCompanyPage(1);
+              }}
+              className="rounded-lg border px-3 py-2 text-sm"
+            >
+              <option value="">All Difficulties</option>
+              <option value="Easy">Easy</option>
+              <option value="Medium">Medium</option>
+              <option value="Hard">Hard</option>
+            </select>
+            <button className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-800">
+              Filter Questions
+            </button>
+          </form>
+
+          {/* Main Content Grid: Questions + Interactive Practice Pane */}
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+            {/* Question Cards List */}
+            <div className="space-y-3">
+              {companyLoading ? (
+                <div className="rounded-xl border bg-white p-10 text-center text-slate-600">
+                  <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-violet-700 border-t-transparent"></div>
+                  <p className="mt-2 text-sm font-medium">Loading authentic interview questions for {selectedCompany}…</p>
+                </div>
+              ) : companyQuestions.length ? (
+                companyQuestions.map((q) => (
+                  <article
+                    key={q.id}
+                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="inline-block rounded-md bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-800">
+                          {q.company_name}
+                        </span>
+                        <span className="ml-2 inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                          {q.interview_round}
+                        </span>
+                        <span
+                          className={`ml-2 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
+                            q.difficulty.toLowerCase() === 'hard'
+                              ? 'bg-rose-50 text-rose-700'
+                              : q.difficulty.toLowerCase() === 'medium'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {q.difficulty}
+                        </span>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        ✓ Verified Interview
+                      </span>
+                    </div>
+
+                    <h3 className="mt-3 text-base font-semibold leading-snug text-slate-900">
+                      {q.question_text}
+                    </h3>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      <span className="rounded bg-slate-100 px-2 py-1 font-medium">{q.category}</span>
+                      <span className="rounded bg-slate-100 px-2 py-1 text-slate-500">{q.job_role}</span>
+                      {q.skills_tested?.slice(0, 3).map((skill, idx) => (
+                        <span key={idx} className="rounded bg-slate-100 px-2 py-1 text-slate-500">
+                          #{skill}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => openCompanyQuestion(q)}
+                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-violet-700 hover:text-violet-800"
+                      >
+                        <span>Practice this question</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                      <span className="text-xs text-slate-400">Platform: {q.source_platform}</span>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed bg-white p-10 text-center text-slate-600">
+                  <p className="font-semibold text-slate-800">No questions found</p>
+                  <p className="mt-1 text-sm">Try broadening your round or difficulty filters for {selectedCompany}.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Interactive Practice Side Pane */}
+            <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6">
+              {selectedCompanyQ ? (
+                <>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                      <span className="rounded-md bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-800">
+                        {selectedCompanyQ.company_name}
+                      </span>
+                      <span className="ml-2 text-xs font-semibold text-slate-500">{selectedCompanyQ.interview_round}</span>
+                    </div>
+                    <span className="text-xs font-semibold uppercase text-violet-700">{selectedCompanyQ.difficulty}</span>
+                  </div>
+
+                  <h2 className="mt-3 text-lg font-bold text-slate-900">Practice Interview Problem</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{selectedCompanyQ.question_text}</p>
+
+                  <label htmlFor="company-answer" className="mt-4 block text-sm font-medium text-slate-800">
+                    <RequiredLabel>Your solution approach & code</RequiredLabel>
+                  </label>
+                  <textarea
+                    id="company-answer"
+                    value={companyAnswer}
+                    onChange={(e) => setCompanyAnswer(e.target.value)}
+                    rows={7}
+                    disabled={evaluatingCompany || !!companyResult}
+                    className="mt-2 w-full rounded-lg border p-3 font-mono text-xs focus:border-violet-500 focus:outline-none"
+                    placeholder="1. Clarify constraints & edge cases...&#10;2. Outline algorithm & data structure...&#10;3. State Big-O time and space complexity...&#10;4. Provide implementation code..."
+                  />
+
+                  {!companyResult && (
+                    <button
+                      type="button"
+                      onClick={() => void submitCompanyAnswer()}
+                      disabled={evaluatingCompany || companyAnswer.trim().length < 5}
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:opacity-50"
+                    >
+                      {evaluatingCompany ? (
+                        <>
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                          <span>Evaluating against {selectedCompanyQ.company_name} rubric…</span>
+                        </>
+                      ) : (
+                        <span>Evaluate Solution</span>
+                      )}
+                    </button>
+                  )}
+
+                  {companyResult && (
+                    <div role="status" className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                            companyResult.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {companyResult.is_correct ? 'Meets Standards' : 'Needs Optimization'} · {companyResult.score_percentage}%
+                        </span>
+                        <span className="text-xs text-slate-500">Benchmark Assessment</span>
+                      </div>
+                      <p className="text-slate-800 font-medium">{companyResult.feedback}</p>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Expected Key Elements</p>
+                        <p className="mt-1 rounded bg-white p-2.5 text-xs text-slate-700 border border-slate-200">
+                          {companyResult.expected_answer}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompanyResult(null);
+                          setCompanyAnswer('');
+                        }}
+                        className="text-xs font-semibold text-violet-700 hover:text-violet-800"
+                      >
+                        Try another solution →
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-12 text-center">
+                  <h3 className="font-semibold text-slate-900">Select an Interview Question</h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Click "Practice this question" on any {selectedCompany} problem to submit your solution and receive instant rubric feedback.
+                  </p>
+                </div>
+              )}
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* STANDARD CURRICULUM PRACTICE VIEW */}
+      {/* ========================================================================= */}
+      {activeTab === 'standard' && (
+        <div className="space-y-5">
+          <form
+            className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4 shadow-sm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setQuestions([]);
+              setPage(1);
+              if (query === searchText && page === 1) void loadQuestions();
+              else setQuery(searchText);
+            }}
+          >
+            <label className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <span className="sr-only">Search questions</span>
+              <input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search questions, subjects, topics"
+                className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-sm"
+              />
+            </label>
+            <label className="sr-only" htmlFor="question-difficulty">
+              Difficulty
+            </label>
+            <select
+              id="question-difficulty"
+              value={filters.difficulty}
+              onChange={(event) => {
+                setFilters({ ...filters, difficulty: event.target.value });
+                setPage(1);
+              }}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+            >
+              <option value="">All difficulties</option>
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+              <option value="expert">Expert</option>
+            </select>
+            {[
+              ['industry_category_id', 'All categories', taxonomy.categories.map((x) => [x.id, x.name])],
+              ['job_role_id', 'All roles', taxonomy.job_roles.map((x) => [x.id, x.title])],
+              ['subject_id', 'All subjects', taxonomy.subjects.map((x) => [x.id, x.name])],
+              ['topic_id', 'All topics', taxonomy.topics.map((x) => [x.id, x.name])],
+              ['skill_id', 'All skills', taxonomy.skills.map((x) => [x.id, x.name])],
+              ['experience_level_id', 'All experience levels', taxonomy.experience_levels.map((x) => [x.id, x.name])],
+              ['interview_round', 'All rounds', taxonomy.interview_rounds.map((x) => [x.name, x.name])],
+              ['company_id', 'All companies', taxonomy.companies.map((x) => [x.id, x.name])],
+              [
+                'question_type',
+                'All question types',
+                [
+                  'mcq_single',
+                  'mcq_multiple',
+                  'short_answer',
+                  'long_answer',
+                  'descriptive',
+                  'coding',
+                  'scenario',
+                  'case_study',
+                  'situational',
+                  'behavioral',
+                  'technical',
+                  'domain_specific',
+                ].map((x) => [x, x.replaceAll('_', ' ')]),
+              ],
+              ['bookmarked', 'All questions', [['true', 'Bookmarked only']]],
+            ].map(([key, label, items]) => (
+              <select
+                key={String(key)}
+                aria-label={String(label)}
+                value={filters[key as keyof typeof filters]}
+                onChange={(event) => {
+                  setFilters({ ...filters, [key as string]: event.target.value });
+                  setPage(1);
+                }}
+                className="rounded-lg border px-3 py-2.5 text-sm"
+              >
+                <option value="">{String(label)}</option>
+                {(items as string[][]).map(([value, name]) => (
+                  <option key={value} value={value}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ))}
+            <button className="rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-800">
+              Search
+            </button>
+          </form>
+
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+            <div className="space-y-3">
+              {loading ? (
+                <div className="rounded-xl border bg-white p-8 text-slate-600">Loading published questions…</div>
+              ) : questions.length ? (
+                questions.map((question) => (
+                  <article key={question.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openQuestion(question)}
+                        className="text-left text-base font-semibold text-slate-900 hover:text-violet-700"
+                      >
+                        {question.question_text}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={question.is_bookmarked ? 'Remove bookmark' : 'Bookmark question'}
+                        onClick={() => void toggleBookmark(question)}
+                        className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
+                      >
+                        <Bookmark className="h-4 w-4" fill={question.is_bookmarked ? 'currentColor' : 'none'} />
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1">{question.industry?.name ?? 'Industry'}</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1">
+                        {question.subject} · {question.topic}
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1">{question.difficulty}</span>
+                      <span className="rounded-full bg-violet-50 px-2.5 py-1 text-violet-800">
+                        {provenanceLabel[question.source_provenance]}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openQuestion(question)}
+                      className="mt-4 text-sm font-semibold text-violet-700"
+                    >
+                      Practice this question →
+                    </button>
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed bg-white p-8 text-center text-slate-600">
+                  No published questions match these filters.
+                </div>
+              )}
+            </div>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => setPage((value) => value + 1)}
+                className="w-full rounded-lg border bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+              >
+                Load more questions
+              </button>
+            )}
+            <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5 lg:sticky lg:top-6">
+              {selected ? (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                    {selected.question_type.replaceAll('_', ' ')}
+                  </p>
+                  <h2 className="mt-2 text-xl font-bold text-slate-900">Practice question</h2>
+                  <p className="mt-3 text-sm leading-6 text-slate-700">{selected.question_text}</p>
+                  {selected.options.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      {selected.options.map((option) => (
+                        <p key={option.id} className="rounded-md bg-slate-50 p-3 text-sm">
+                          <strong>{option.id}.</strong> {option.text}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <label htmlFor="practice-answer" className="mt-5 block text-sm font-medium text-slate-800">
+                    <RequiredLabel>Your answer</RequiredLabel>
+                  </label>
+                  <textarea
+                    id="practice-answer"
+                    value={answer}
+                    onChange={(event) => setAnswer(event.target.value)}
+                    rows={5}
+                    disabled={!!result}
+                    className="mt-2 w-full rounded-lg border p-3 text-sm"
+                    placeholder={
+                      selected.options.length ? 'Enter the option ID, or IDs separated by commas' : 'Write your answer'
+                    }
+                  />
+                  {!result && (
+                    <button
+                      type="button"
+                      onClick={() => void submitAnswer()}
+                      disabled={!answer.trim()}
+                      className="mt-3 rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      Submit answer
+                    </button>
+                  )}
+                  {result && (
+                    <div role="status" className="mt-4 rounded-lg bg-slate-50 p-4 text-sm">
+                      <p className="font-semibold text-slate-900">
+                        {result.evaluation_status === 'unavailable'
+                          ? 'Answer saved; evaluation unavailable'
+                          : result.evaluation_provenance === 'ai'
+                          ? `AI evaluation · ${result.score_percentage}%`
+                          : `${result.is_correct ? 'Correct' : 'Not quite'} · ${result.score_percentage}%`}
+                      </p>
+                      <p className="mt-2 text-slate-700">{result.feedback}</p>
+                      <p className="mt-3 font-medium text-slate-800">Expected answer</p>
+                      <p className="mt-1 text-slate-700">{result.expected_answer}</p>
+                      {result.explanation && <p className="mt-2 text-slate-700">{result.explanation}</p>}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="py-10 text-center">
+                  <h2 className="font-semibold text-slate-900">Choose a question</h2>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Your response is saved to your practice history when submitted.
+                  </p>
+                </div>
+              )}
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* COMPANY BLUEPRINT MODAL */}
+      {/* ========================================================================= */}
+      {blueprintModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div>
+                <span className="rounded-md bg-violet-100 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-violet-800">
+                  Hiring Blueprint
+                </span>
+                <h2 className="mt-1 text-2xl font-extrabold text-slate-900">
+                  {blueprintData?.company_name || selectedCompany} Interview Process Loop
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Target: {blueprintData?.target_role || 'Software Engineer'} · {blueprintData?.seniority_tier || 'Mid/Senior'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBlueprintModalOpen(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {blueprintLoading ? (
+              <div className="py-12 text-center">
+                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-violet-700 border-t-transparent"></div>
+                <p className="mt-2 text-sm text-slate-600">Generating hiring blueprint…</p>
+              </div>
+            ) : blueprintData ? (
+              <div className="mt-4 space-y-5">
+                {/* Philosophy Banner */}
+                <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wider text-violet-800">Hiring Philosophy & Culture</p>
+                  <p className="mt-1 text-sm text-slate-700 leading-relaxed">{blueprintData.hiring_philosophy}</p>
+                </div>
+
+                {/* 5 Rounds Breakdown */}
+                <div className="space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    5-Round Hiring Sequence ({blueprintData.total_rounds} Total Rounds)
+                  </p>
+                  {blueprintData.rounds.map((round) => (
+                    <div key={round.round_number} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                        <span className="text-sm font-bold text-slate-900">{round.round_name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">
+                            Weight: {round.weightage_percent}%
+                          </span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                            ⏱️ {round.typical_duration_minutes} min
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                        <div>
+                          <p className="font-semibold text-slate-700">Core Focus Areas:</p>
+                          <ul className="mt-1 list-inside list-disc text-slate-600 space-y-0.5">
+                            {round.focus_areas.map((fa, idx) => (
+                              <li key={idx}>{fa}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-700">Sample Topics:</p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {round.sample_topics.map((st, idx) => (
+                              <span key={idx} className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
+                                {st}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-lg bg-slate-50 p-2.5 text-xs text-slate-600">
+                        <strong className="text-slate-800">Preparation Tip: </strong>
+                        {round.preparation_tips}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setBlueprintModalOpen(false)}
+                    className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800"
+                  >
+                    Close Blueprint
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
