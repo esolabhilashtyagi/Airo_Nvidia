@@ -1,11 +1,14 @@
 """
 Workflow State & Job Lifecycle Tracking for Orchestration.
-Tracks pipeline progress, agent heartbeat, and task dependencies.
+Tracks pipeline progress, agent heartbeat, task dependencies,
+and persistent cursor pagination across companies and roles for open-web harvesting.
 """
 
 from typing import Dict, Any, Optional, List
 from enum import Enum
 import uuid
+import sqlite3
+import os
 from datetime import datetime
 
 
@@ -22,6 +25,72 @@ class WorkflowState:
         self.active_jobs: Dict[str, Dict[str, Any]] = {}
         self.agent_statuses: Dict[str, Dict[str, Any]] = {}
         self.job_history: List[Dict[str, Any]] = []
+        self._cursor_cache: Dict[str, int] = {}
+        self._db_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "interview_intelligence.db")
+        )
+        self._init_cursor_table()
+
+    def _init_cursor_table(self):
+        """Ensures the harvesting cursor table exists for persistent pagination."""
+        try:
+            conn = sqlite3.connect(self._db_path)
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS harvesting_cursors (
+                    cursor_key TEXT PRIMARY KEY,
+                    company TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    last_page INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def get_cursor_page(self, company: str, role: str) -> int:
+        """Retrieves the next page index to scrape for a given company and role."""
+        key = f"{company.lower().strip()}::{role.lower().strip()}"
+        if key in self._cursor_cache:
+            return self._cursor_cache[key]
+
+        try:
+            conn = sqlite3.connect(self._db_path)
+            c = conn.cursor()
+            c.execute("SELECT last_page FROM harvesting_cursors WHERE cursor_key = ?", (key,))
+            row = c.fetchone()
+            conn.close()
+            page = row[0] if row else 1
+            self._cursor_cache[key] = page
+            return page
+        except Exception:
+            return 1
+
+    def advance_cursor_page(self, company: str, role: str, step: int = 1) -> int:
+        """Increments the cursor page so subsequent harvest cycles fetch fresh search results."""
+        current = self.get_cursor_page(company, role)
+        next_page = current + step
+        key = f"{company.lower().strip()}::{role.lower().strip()}"
+        self._cursor_cache[key] = next_page
+
+        try:
+            conn = sqlite3.connect(self._db_path)
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO harvesting_cursors (cursor_key, company, role, last_page, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(cursor_key) DO UPDATE SET
+                    last_page = excluded.last_page,
+                    updated_at = excluded.updated_at
+            """, (key, company.strip(), role.strip(), next_page, datetime.utcnow().isoformat()))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        return next_page
 
     def register_agent(self, agent_name: str, agent_type: str = "DETERMINISTIC"):
         self.agent_statuses[agent_name] = {

@@ -1,8 +1,10 @@
 """
 Live Multi-Source Web Scraper for Interview Intelligence Platform.
-Performs real-time, live web collection of authentic interview questions from public developer
-discussions, HackerNews Algolia real-time index, and engineering interview archives without paid APIs.
-Enforces hard REJECT for noise, strict HTML/markdown stripping, atomicity, and accurate metadata attribution.
+Performs real-time, live web collection of authentic interview questions from:
+1. Search Discovery (SearXNG / Multi-Engine) -> Universal Article Body Extraction (curl_cffi + trafilatura) -> Nemotron Extraction Gate
+2. Open-source interview repositories & verified developer discussions
+Enforces hard REJECT for noise, strict HTML/markdown stripping, atomicity, persistent cursor pagination,
+and accurate metadata attribution.
 """
 
 import httpx
@@ -22,7 +24,10 @@ from models.fallback_models import (
     get_dedup_hash,
     CANONICAL_CATEGORIES,
 )
+from core.workflow_state import workflow_state
 from core.logging import logger
+from collectors.open_web_collector import OpenWebCollector
+from agents.coding_extraction_agent import CodingProblemExtractionAgent
 
 TECH_GIANTS_AND_STARTUPS = [
     "Google", "Amazon", "Meta", "NVIDIA", "Microsoft", "Apple", "Netflix", "Uber",
@@ -114,7 +119,6 @@ GARBAGE_PATTERNS = [
     r"in linux fhs",
 ]
 
-# Domains that publish blog articles rather than raw interview question threads
 BLOG_DOMAINS = [
     "medium.com", "businessinsider.com", "qz.com", "blogspot.com",
     "impactinterview.com", "wordpress.com", "alexgolec.dev", "javarevisited"
@@ -126,6 +130,8 @@ class LiveWebScraper:
         self.db = get_db_repository()
         self.mm = get_model_manager()
         self.nlp = FallbackNLPModel()
+        self.open_collector = OpenWebCollector()
+        self.coding_agent = CodingProblemExtractionAgent()
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, text/markdown, */*",
@@ -139,10 +145,8 @@ class LiveWebScraper:
         if not raw_text:
             return ""
 
-        # First pass: parse with BeautifulSoup to clean markup, details/summary, etc.
         try:
             soup = BeautifulSoup(raw_text, "html.parser")
-            # Decompose tags that are purely decorative or structural noise
             for tag in soup(["script", "style", "img", "svg"]):
                 tag.decompose()
             clean = soup.get_text(" ", strip=True)
@@ -150,15 +154,10 @@ class LiveWebScraper:
             clean = re.sub(r"<[^>]+?>", " ", raw_text)
 
         clean = html.unescape(clean)
-        # Strip markdown links [text](url) -> text
         clean = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", clean)
-        # Strip markdown images ![alt](url)
         clean = re.sub(r"!\[[^\]]*\]\([^\)]+\)", " ", clean)
-        # Strip markdown anchor links [text](#anchor)
         clean = re.sub(r"\[([^\]]+)\]\(#[^\)]+\)", r"\1", clean)
-        # Strip code backticks
         clean = re.sub(r"`{1,3}", "", clean)
-        # Collapse whitespace
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
 
@@ -203,19 +202,15 @@ class LiveWebScraper:
     def _is_valid_technical_question(self, text: str) -> bool:
         """Strictly validates whether candidate text is an actual technical interview question."""
         t = text.strip()
-        # Drop fragments under 8 words (or fewer than 35 characters)
         words = t.split()
         if len(words) < 8 or len(t) < 35 or len(t) > 700:
             return False
 
         t_low = t.lower()
-
-        # Reject conversational garbage, forum rants, and article titles
         for pat in GARBAGE_PATTERNS:
             if re.search(pat, t_low):
                 return False
 
-        # Must have an action verb or end with '?'
         action_verbs = [
             "given ", "implement ", "design ", "explain ", "how do you ", "how would you ",
             "write a ", "find the ", "what is the ", "describe a ", "suppose you have ",
@@ -225,7 +220,6 @@ class LiveWebScraper:
         has_action = any(t_low.startswith(p) or f" {p}" in t_low for p in action_verbs)
         has_qmark = t.endswith("?")
 
-        # Must contain at least one technical domain word
         tech_words = [
             "array", "tree", "graph", "cache", "string", "query", "sql", "thread", "lock",
             "concurrency", "database", "latency", "system", "service", "algorithm", "dp",
@@ -243,20 +237,14 @@ class LiveWebScraper:
             return questions
 
         clean_text = self._clean_html_and_markdown(text)
-
-        # Split into sentences or lines
         sentences = re.split(r"(?<=[.!?\n])\s+", clean_text)
 
         for s in sentences:
             s_clean = s.strip()
-            if not s_clean:
-                continue
-
-            if s_clean.startswith(">") or s_clean.startswith("&gt;"):
+            if not s_clean or s_clean.startswith(">") or s_clean.startswith("&gt;"):
                 continue
 
             cleaned_s = strip_question_wrappers(s_clean)
-
             if self._is_valid_technical_question(cleaned_s):
                 r_num, r_name = self._infer_round(cleaned_s)
                 diff = self._infer_difficulty(cleaned_s)
@@ -278,133 +266,115 @@ class LiveWebScraper:
         max_pages: int = 5,
     ) -> Dict[str, Any]:
         """
-        Executes live web scraping across public developer indexes for the specified company/query.
-        Enforces strict company attribution and craft role derivation.
+        Executes multi-engine discovery across the open web and public archives.
+        Uses persistent cursor pagination and the Nemotron gate for full article extraction.
         """
         is_all = not company or company.strip().lower() in ["all", "all companies", "all mncs", "all startups", ""]
         comp_target = "Google" if is_all else company.strip()
+        role_target = role.strip() if role and role.lower() not in ["", "all", "all roles"] else "Software Development Engineer II"
 
-        # Build clean search queries targeting genuine question posts
-        search_terms = []
-        if keyword:
-            search_terms.append(f"{comp_target} {keyword} coding interview")
+        cursor_page = workflow_state.get_cursor_page(comp_target, role_target)
+        logger.info(f"Scraping live questions for {comp_target} ({role_target}) at cursor page {cursor_page}...")
 
-        if is_all:
-            for c in ["Google", "Amazon", "Meta", "NVIDIA", "Microsoft", "Stripe", "Databricks", "OpenAI", "Uber"][:6]:
-                search_terms.append(f"{c} coding round question")
-                search_terms.append(f"{c} system design question")
-        else:
-            search_terms.extend([
-                f"{comp_target} coding interview question",
-                f"{comp_target} system design interview question",
-                f"{comp_target} online assessment OA question",
-                f"{comp_target} machine coding interview",
-            ])
-
-        extracted_raw_records = []
-        hits_per_page = 50 if (limit and limit <= 100) else 100
-        pages_to_crawl = max(1, min(max_pages, 8))
-
-        async with httpx.AsyncClient(headers=self.headers, timeout=15.0) as client:
-            # 1. Real-time HackerNews Search API (Public, Zero auth)
-            for term in search_terms:
-                if limit and len(extracted_raw_records) >= limit * 3:
-                    break
-                for page in range(pages_to_crawl):
-                    if limit and len(extracted_raw_records) >= limit * 3:
-                        break
-                    try:
-                        url = f"https://hn.algolia.com/api/v1/search?query={term}&tags=comment&hitsPerPage={hits_per_page}&page={page}"
-                        res = await client.get(url)
-                        if res.status_code == 200:
-                            hits = res.json().get("hits", [])
-                            if not hits:
-                                break
-                            for h in hits:
-                                raw_body = h.get("comment_text") or ""
-                                clean_body = self._clean_html_and_markdown(raw_body)
-                                if len(clean_body) >= 50:
-                                    post_id = h.get("objectID")
-                                    story_url = h.get("story_url") or ""
-
-                                    # Reject blog post discussions
-                                    if any(bd in story_url.lower() for bd in BLOG_DOMAINS):
-                                        continue
-
-                                    hit_url = f"https://news.ycombinator.com/item?id={post_id}"
-                                    extracted_raw_records.append({
-                                        "title": f"{comp_target} Technical Discussion",
-                                        "text": clean_body,
-                                        "url": hit_url,
-                                        "platform": "HackerNews Public Live Index",
-                                        "is_archive": False,
-                                        "explicit_company": comp_target if comp_target.lower() in clean_body.lower() else None,
-                                    })
-                    except Exception as e:
-                        logger.warning(f"Live web scrape query '{term}' p.{page} encountered: {e}")
-                        break
-
-            # 2. Ingest from high-yield GitHub Open Interview Repositories if batch is requested
-            for arch in GITHUB_ARCHIVES:
-                try:
-                    res = await client.get(arch["url"])
-                    if res.status_code == 200 and len(res.text) > 500:
-                        extracted_raw_records.append({
-                            "title": arch["platform"],
-                            "text": res.text[:60000],
-                            "url": arch["url"],
-                            "platform": arch["platform"],
-                            "is_archive": True,
-                            "archive_domain": arch["archive_domain"],
-                            "explicit_company": None,
-                        })
-                except Exception as e:
-                    logger.warning(f"Archive fetch for {arch['url']} failed: {e}")
-
-        # Parse questions from all collected documents
         candidate_questions = []
         seen_hashes = set()
+        scraped_sources_count = 0
 
-        for rec in extracted_raw_records:
-            qs = self._extract_questions_from_text(rec["text"], comp_target)
-            for q in qs:
-                q_text = q["question_text"]
-                q_hash = get_dedup_hash(q_text)
-                if q_hash in seen_hashes:
-                    continue
-                seen_hashes.add(q_hash)
+        # =========================================================================
+        # STAGE 1 & 2: Search Discovery -> Universal Body Extraction (trafilatura)
+        # =========================================================================
+        try:
+            articles = await self.open_collector.harvest_open_web(
+                company=comp_target,
+                role=role_target,
+                page=cursor_page,
+                max_articles=10 if (limit and limit <= 100) else 15,
+            )
+            scraped_sources_count += len(articles)
 
-                cls = self.nlp.classify_question(q_text)
+            # Advance cursor page for next run
+            workflow_state.advance_cursor_page(comp_target, role_target, 1)
 
-                # Strict metadata attribution: NEVER stamp target company onto generic GitHub archives!
-                if rec.get("is_archive"):
-                    if not is_all and comp_target.lower() in q_text.lower():
-                        assigned_company = comp_target
-                    else:
-                        assigned_company = rec.get("archive_domain", "Core Systems & Algorithms")
-                else:
-                    assigned_company = rec.get("explicit_company") or (comp_target if comp_target.lower() in q_text.lower() else "Core Technical Practice")
-
-                assigned_role = self._infer_role_from_category(cls["category"], role)
-
-                candidate_questions.append({
-                    "company_name": assigned_company,
-                    "job_role": assigned_role,
-                    "question_text": q_text,
-                    "question_category": cls["category"],
-                    "difficulty": q["difficulty"],
-                    "round_number": q["round_number"],
-                    "interview_round": q["interview_round"],
-                    "source_platform": rec["platform"],
-                    "original_url": rec["url"],
-                    "confidence_score": 0.95,
-                    "skills_tested": [cls["category"], "Problem Solving"],
-                })
+            # STAGE 3: Nemotron / LLM Extraction Gate on Full Articles
+            for art in articles:
+                gated_qs = await self.coding_agent.extract_questions_from_full_article(
+                    article_content=art["content"],
+                    company=comp_target,
+                    role=role_target,
+                    url=art["url"],
+                    platform=art["platform"],
+                )
+                for gq in gated_qs:
+                    q_hash = get_dedup_hash(gq["question_text"])
+                    if q_hash not in seen_hashes:
+                        seen_hashes.add(q_hash)
+                        candidate_questions.append(gq)
 
                 if limit and len(candidate_questions) >= limit:
                     break
-            if limit and len(candidate_questions) >= limit:
-                break
+        except Exception as e:
+            logger.warning(f"Open-web harvest encountered: {e}")
+
+        # =========================================================================
+        # STAGE 4: Developer Discussion Index & Open Repositories
+        # =========================================================================
+        if not limit or len(candidate_questions) < limit:
+            search_terms = []
+            if keyword:
+                search_terms.append(f"{comp_target} {keyword} coding interview")
+            else:
+                search_terms.append(f"{comp_target} coding interview question")
+                search_terms.append(f"{comp_target} system design interview")
+
+            async with httpx.AsyncClient(headers=self.headers, timeout=12.0) as client:
+                for term in search_terms:
+                    if limit and len(candidate_questions) >= limit:
+                        break
+                    try:
+                        url = f"https://hn.algolia.com/api/v1/search?query={term}&tags=comment&hitsPerPage=50&page={cursor_page % 5}"
+                        res = await client.get(url)
+                        if res.status_code == 200:
+                            hits = res.json().get("hits", [])
+                            scraped_sources_count += len(hits)
+                            for h in hits:
+                                raw_body = h.get("comment_text") or ""
+                                story_url = h.get("story_url") or ""
+                                if any(bd in story_url.lower() for bd in BLOG_DOMAINS):
+                                    continue
+
+                                clean_body = self._clean_html_and_markdown(raw_body)
+                                if len(clean_body) >= 50:
+                                    post_id = h.get("objectID")
+                                    hit_url = f"https://news.ycombinator.com/item?id={post_id}"
+                                    qs = self._extract_questions_from_text(clean_body, comp_target)
+                                    for q in qs:
+                                        q_text = q["question_text"]
+                                        q_hash = get_dedup_hash(q_text)
+                                        if q_hash in seen_hashes:
+                                            continue
+                                        seen_hashes.add(q_hash)
+
+                                        cls = self.nlp.classify_question(q_text)
+                                        assigned_comp = comp_target if comp_target.lower() in clean_body.lower() else "Core Technical Practice"
+                                        assigned_role = self._infer_role_from_category(cls["category"], role_target)
+
+                                        candidate_questions.append({
+                                            "company_name": assigned_comp,
+                                            "job_role": assigned_role,
+                                            "question_text": q_text,
+                                            "question_category": cls["category"],
+                                            "difficulty": q["difficulty"],
+                                            "round_number": q["round_number"],
+                                            "interview_round": q["interview_round"],
+                                            "source_platform": "Developer Technical Discussion",
+                                            "original_url": hit_url,
+                                            "confidence_score": 0.90,
+                                            "skills_tested": [cls["category"]],
+                                        })
+                                        if limit and len(candidate_questions) >= limit:
+                                            break
+                    except Exception as e:
+                        logger.debug(f"Discussion scrape encountered: {e}")
 
         # Bulk insert into database with canonical number-masked deduplication
         stored_count = 0
@@ -413,7 +383,8 @@ class LiveWebScraper:
 
         return {
             "company": comp_target,
-            "scraped_sources_count": len(extracted_raw_records),
+            "cursor_page": cursor_page,
+            "scraped_sources_count": scraped_sources_count,
             "extracted_questions_count": len(candidate_questions),
             "stored_in_database": stored_count,
             "questions": candidate_questions[:50],

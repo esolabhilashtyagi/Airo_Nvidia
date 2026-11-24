@@ -39,6 +39,18 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
+  # SearXNG Metasearch Engine for Unlimited Multi-Engine Web Discovery
+  searxng:
+    image: searxng/searxng:latest
+    container_name: interview_intelligence_searxng
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+
   # FastAPI Backend Service
   api:
     build:
@@ -52,6 +64,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/interview_intelligence
       - OLLAMA_BASE_URL=http://ollama:11434
+      - SEARXNG_URL=http://searxng:8080/search
       - APP_ENV=production
     ports:
       - "8000:8000"
