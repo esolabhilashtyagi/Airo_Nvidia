@@ -327,12 +327,14 @@ if menu in ["⚡ Startups & MNCs Intelligence", "🎯 Interview Process Blueprin
             label_visibility="collapsed",
         )
 
-    act_col1, act_col2, act_col3 = st.columns([2.5, 1.8, 1.0])
+    act_col1, act_col2, act_col3, act_col4 = st.columns([1.8, 1.8, 1.5, 0.9])
     with act_col1:
         search_button = st.button("🔍 SEARCH RELEVANT QUESTIONS", type="primary", use_container_width=True, key="main_search_btn")
     with act_col2:
-        live_scrape_btn = st.button("🌐 ACTUAL LIVE WEB SCRAPE", use_container_width=True, key="main_live_scrape_btn", help="Scrapes live public developer discussions and real interview questions from the web without limits.")
+        nemotron_btn = st.button("⚡ NEMOTRON ROUND SYNTHESIS & DORKS", use_container_width=True, key="main_nemotron_dorks_btn", help="Generates round-specific open-web search dorks using Nemotron and synthesizes verified round-by-round interview questions.")
     with act_col3:
+        live_scrape_btn = st.button("🌐 ACTUAL LIVE WEB SCRAPE", use_container_width=True, key="main_live_scrape_btn", help="Scrapes live public developer discussions and real interview questions from the web without limits.")
+    with act_col4:
         reset_button = st.button("🔄 Reset Filters", use_container_width=True, key="main_reset_btn")
 
     if reset_button:
@@ -342,7 +344,91 @@ if menu in ["⚡ Startups & MNCs Intelligence", "🎯 Interview Process Blueprin
         st.session_state.param_diff = "All"
         st.session_state.param_skills_str = "Python, Distributed Systems, Concurrency, Algorithms"
         st.session_state.param_keyword = ""
+        st.session_state.nemotron_dorks_cache = None
+        st.session_state.nemotron_questions_cache = None
         st.rerun()
+
+    if nemotron_btn:
+        import asyncio
+        target_comp_val = target_company if target_company not in ["All Companies", "All MNCs", "All Startups", ""] else "Google"
+        yoe_map = {"Entry (0-2y)": 1.5, "Mid (3-5y)": 4.0, "Senior (6-8y)": 7.0, "Staff (9y+)": 10.0}
+        yoe_num_val = yoe_map.get(target_yoe, 4.0)
+        skills_clean = [s.strip() for s in st.session_state.get("param_skills_str", "").split(",") if s.strip()]
+
+        with st.spinner(f"⚡ Nemotron is analyzing {target_comp_val} ({target_role or 'Software Engineer'}, {yoe_num_val} YoE)... generating dynamic domain dorks & synthesizing verified round questions..."):
+            dorks_result = asyncio.run(mm.generate_domain_dorks(
+                company=target_comp_val,
+                role=target_role or "Software Engineer",
+                yoe=yoe_num_val,
+                skills=skills_clean,
+            ))
+            questions_result = asyncio.run(mm.synthesize_round_questions(
+                company=target_comp_val,
+                role=target_role or "Software Engineer",
+                yoe=yoe_num_val,
+                skills=skills_clean,
+            ))
+            st.session_state.nemotron_dorks_cache = dorks_result
+            st.session_state.nemotron_questions_cache = questions_result
+            st.success(f"✅ Generated {len(questions_result)} verified round-by-round interview questions and dynamic dorks for {target_comp_val}!")
+
+    if st.session_state.get("nemotron_dorks_cache"):
+        cached_dorks = st.session_state.nemotron_dorks_cache
+        cached_qs = st.session_state.get("nemotron_questions_cache") or []
+        with st.expander("⚡ Nemotron Dynamic Domain Dorks & Round-by-Round Breakdown", expanded=True):
+            st.markdown(f"**Target:** `{cached_dorks.get('company')}` | **Role:** `{cached_dorks.get('role')}` | **YoE:** `{cached_dorks.get('yoe')} Years` | **Skills:** `{', '.join(cached_dorks.get('skills_tested', []))}`")
+            dork_tabs = st.tabs([
+                "🎯 Canonical Rounds (1-5)",
+                "🌐 Platform-Specific Dorks",
+                "📥 Synthesized Questions Export"
+            ])
+            with dork_tabs[0]:
+                r_dorks = cached_dorks.get("round_dorks") or cached_dorks.get("round_specific_dorks") or {}
+                for r_k, r_v in r_dorks.items():
+                    r_title = r_k.replace("_", " ").title()
+                    st.markdown(f"**{r_title}:**")
+                    if isinstance(r_v, list):
+                        for d_str in r_v:
+                            st.code(d_str, language="text")
+                    elif isinstance(r_v, dict):
+                        st.code(r_v.get("dork_query", ""), language="text")
+                        if r_v.get("competencies"):
+                            st.caption(f"Competencies: {', '.join(r_v.get('competencies', []))}")
+                    else:
+                        st.code(str(r_v), language="text")
+                if cached_dorks.get("global_negative_operators"):
+                    st.markdown(f"**Global Exclusion Filters (Eliminates Noise):** `{cached_dorks.get('global_negative_operators')}`")
+            with dork_tabs[1]:
+                for plat_k, plat_query in cached_dorks.get("platform_queries", {}).items():
+                    st.markdown(f"**{plat_k.replace('_', ' ').title()}:**")
+                    st.code(plat_query, language="text")
+            with dork_tabs[2]:
+                if cached_qs:
+                    st.markdown(f"**{len(cached_qs)} Synthesized High-Precision Questions (Zero HackerNews Chatter):**")
+                    df_nemotron = pd.DataFrame([
+                        {
+                            "Round": q.get("round_number", 1),
+                            "Interview Round": q.get("interview_round", "Technical Round"),
+                            "Company": q.get("company"),
+                            "Role": q.get("role"),
+                            "Question": q.get("question_text"),
+                            "Category": q.get("category"),
+                            "Difficulty": q.get("difficulty"),
+                            "Skills Tested": ", ".join(q.get("skills_tested", [])),
+                            "Solution Approach": q.get("solution_approach", ""),
+                            "Platform": q.get("source_platform"),
+                        }
+                        for q in cached_qs
+                    ])
+                    st.download_button(
+                        f"📥 Download Verified {cached_dorks.get('company')} Round-by-Round CSV ({len(cached_qs)} Questions)",
+                        data=df_nemotron.to_csv(index=False),
+                        file_name=f"interview_questions_{cached_dorks.get('company', '').lower()}_rounds_1_to_5.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="dl_nemotron_clean_csv_btn",
+                    )
+                    st.dataframe(df_nemotron[["Round", "Interview Round", "Category", "Difficulty", "Question"]], use_container_width=True)
 
     if live_scrape_btn:
         scrape_target = target_company if target_company not in ["All Companies", "All MNCs", "All Startups", ""] else "Google"
@@ -558,6 +644,11 @@ if menu in ["⚡ Startups & MNCs Intelligence", "🎯 Interview Process Blueprin
     with d_tab2:
         st.subheader(f"🔄 Sequential 5-Round Interview Process for {blueprint_comp}")
         st.caption("Detailed breakdown of competencies, time allocations, and exact questions asked per round.")
+
+        cached_round_qs = st.session_state.get("nemotron_questions_cache") or []
+        if cached_round_qs:
+            st.info(f"⚡ Displaying {len(cached_round_qs)} Nemotron synthesized & verified questions tailored for {blueprint_comp} ({st.session_state.get('param_role') or 'Software Engineer'}).")
+
         for r in blueprint.get("rounds", []):
             r_num = r["round_number"]
             r_name = r["round_name"]
@@ -565,10 +656,26 @@ if menu in ["⚡ Startups & MNCs Intelligence", "🎯 Interview Process Blueprin
             focus_str = " • ".join(r["focus_areas"])
             qs = r["questions"]
 
-            with st.expander(f"🔹 {r_name} ({len(qs)} Curated Questions)", expanded=(r_num in [1, 2])):
+            # Filter synthesized questions for this round
+            matching_synth = [sq for sq in cached_round_qs if sq.get("round_number") == r_num]
+
+            with st.expander(f"🔹 {r_name} ({len(qs)} Database + {len(matching_synth)} Nemotron Verified Questions)", expanded=(r_num in [1, 2])):
                 st.markdown(f"**Round Type:** `{r_type}`")
                 st.markdown(f"**Focus Areas:** {focus_str}")
-                st.divider()
+
+                if matching_synth:
+                    st.markdown("##### ⚡ Nemotron Synthesized Verified Problems:")
+                    for sq_idx, sq in enumerate(matching_synth, 1):
+                        diff_badge = f"🔴 {sq.get('difficulty')}" if sq.get('difficulty') == "Hard" else (f"🟡 {sq.get('difficulty')}" if sq.get('difficulty') == "Medium" else f"🟢 {sq.get('difficulty')}")
+                        st.markdown(f"**N{sq_idx}. [{sq.get('company')}] {diff_badge} — {sq.get('category')}**")
+                        st.markdown(f"> **Question:**\n> {sq.get('question_text')}")
+                        if sq.get("solution_approach"):
+                            st.caption(f"💡 **Expected Solution Approach:** {sq.get('solution_approach')}")
+                        if sq.get("skills_tested"):
+                            st.caption(f"🏷️ **Skills Verified:** {', '.join(sq.get('skills_tested', []))}")
+                        st.divider()
+
+                st.markdown("##### 📚 Canonical Database Problems:")
                 for q_idx, q_item in enumerate(qs, 1):
                     diff_badge = f"🔴 {q_item['difficulty']}" if q_item['difficulty'] == "Hard" else (f"🟡 {q_item['difficulty']}" if q_item['difficulty'] == "Medium" else f"🟢 {q_item['difficulty']}")
                     st.markdown(f"#### Q{q_idx}. [{q_item['company_name']}] — {diff_badge}")

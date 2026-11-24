@@ -39,8 +39,30 @@ class SourceDiscoveryAgent:
         workflow_state.update_agent_status(self.name, AgentStatus.COMPLETED)
         return selected
 
-    async def discover_candidate_urls(self, company: str, role: str, page: int = 1) -> List[str]:
-        """Discovers full candidate interview post URLs across open web."""
+    async def generate_dynamic_dorks(
+        self,
+        company: str,
+        role: str,
+        yoe: float = 3.0,
+        skills: List[str] = None,
+    ) -> Dict[str, Any]:
+        """Generates dynamic open-web search queries using Nemotron instead of static dorks."""
+        from models.model_manager import get_model_manager
+        mm = get_model_manager()
+        return await mm.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
+
+    async def discover_candidate_urls(
+        self,
+        company: str,
+        role: str,
+        page: int = 1,
+        yoe: float = 3.0,
+        skills: List[str] = None,
+        round_number: int = None,
+    ) -> List[str]:
+        """Discovers full candidate interview post URLs across open web using dynamic Nemotron dorks."""
         import httpx
         async with httpx.AsyncClient(headers=self.open_collector.headers, timeout=10.0) as client:
-            return await self.open_collector.discover_urls(client, company, role, page=page)
+            return await self.open_collector.discover_urls(
+                client, company, role, page=page, yoe=yoe, skills=skills, round_number=round_number
+            )

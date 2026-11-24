@@ -261,6 +261,97 @@ async def get_interview_blueprint_get(
     )
 
 
+@router.post("/intelligence/generate-dorks")
+async def generate_domain_dorks(
+    payload: Dict[str, Any],
+):
+    """
+    Nemotron-powered dynamic dork generator:
+    Takes (company, role, yoe, skills) and dynamically generates domain-specific open-web
+    search queries for each round, avoiding static templates.
+    """
+    company = payload.get("company", "Google")
+    role = payload.get("role", "Software Engineer")
+    yoe = float(payload.get("yoe", 3.0))
+    skills = payload.get("skills", [])
+    if isinstance(skills, str):
+        skills = [s.strip() for s in skills.split(",") if s.strip()]
+
+    return await model_manager.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
+
+
+@router.get("/intelligence/generate-dorks")
+async def generate_domain_dorks_get(
+    company: str = Query("Google", description="Target company name"),
+    role: str = Query("Software Engineer", description="Target job role"),
+    yoe: float = Query(3.0, ge=0.0, le=30.0, description="Years of experience"),
+    skills: Optional[str] = Query(None, description="Comma-separated skills"),
+):
+    """GET query variant of the dynamic open-web dork generator."""
+    skills_list = [s.strip() for s in skills.split(",")] if skills else []
+    return await model_manager.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills_list)
+
+
+@router.post("/intelligence/round-questions")
+async def generate_round_questions(
+    payload: Dict[str, Any],
+):
+    """
+    Synthesizes and retrieves the exact, correct, highly-relevant interview questions
+    for EACH canonical round (Rounds 1-5) matching company, role, YoE, and skills.
+    """
+    company = payload.get("company", "Google")
+    role = payload.get("role", "Software Engineer")
+    yoe = float(payload.get("yoe", 3.0))
+    round_number = payload.get("round_number")
+    skills = payload.get("skills", [])
+    if isinstance(skills, str):
+        skills = [s.strip() for s in skills.split(",") if s.strip()]
+
+    dorks = await model_manager.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
+    questions = await model_manager.synthesize_round_questions(
+        company=company, role=role, yoe=yoe, skills=skills, round_number=round_number
+    )
+
+    return {
+        "company": company,
+        "role": role,
+        "yoe": yoe,
+        "skills": skills,
+        "round_number": round_number,
+        "dorks_used": dorks,
+        "total_questions": len(questions),
+        "questions": questions,
+    }
+
+
+@router.get("/intelligence/round-questions")
+async def generate_round_questions_get(
+    company: str = Query("Google", description="Target company name"),
+    role: str = Query("Software Engineer", description="Target job role"),
+    yoe: float = Query(3.0, ge=0.0, le=30.0, description="Years of experience"),
+    skills: Optional[str] = Query(None, description="Comma-separated skills"),
+    round_number: Optional[int] = Query(None, ge=1, le=5, description="Filter for specific round (1-5)"),
+):
+    """GET query variant of the round-by-round question synthesis engine."""
+    skills_list = [s.strip() for s in skills.split(",")] if skills else []
+    dorks = await model_manager.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills_list)
+    questions = await model_manager.synthesize_round_questions(
+        company=company, role=role, yoe=yoe, skills=skills_list, round_number=round_number
+    )
+
+    return {
+        "company": company,
+        "role": role,
+        "yoe": yoe,
+        "skills": skills_list,
+        "round_number": round_number,
+        "dorks_used": dorks,
+        "total_questions": len(questions),
+        "questions": questions,
+    }
+
+
 @router.get("/industries")
 async def list_startup_industries():
     """Lists all available industry sectors for Case B (Startup queries)."""

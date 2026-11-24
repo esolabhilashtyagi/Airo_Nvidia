@@ -140,6 +140,29 @@ class ModelManager:
     def generate_embedding(self, text: str) -> list:
         return self.embedding.encode(text)
 
+    async def generate_domain_dorks(
+        self,
+        company: str,
+        role: str,
+        yoe: float = 3.0,
+        skills: Optional[list] = None,
+    ) -> Dict[str, Any]:
+        """Exposes Nemotron dynamic dork generator with domain fallback."""
+        return await self.nemotron.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
+
+    async def synthesize_round_questions(
+        self,
+        company: str,
+        role: str,
+        yoe: float = 3.0,
+        skills: Optional[list] = None,
+        round_number: Optional[int] = None,
+    ) -> list:
+        """Exposes Nemotron round-by-round question synthesis."""
+        return await self.nemotron.synthesize_round_questions(
+            company=company, role=role, yoe=yoe, skills=skills, round_number=round_number
+        )
+
 
 _model_manager_instance: Optional[ModelManager] = None
 

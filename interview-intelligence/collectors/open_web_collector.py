@@ -53,11 +53,12 @@ class OpenWebCollector:
         company: str,
         role: str,
         page: int = 1,
+        custom_query: Optional[str] = None,
     ) -> List[str]:
-        """Queries local SearXNG instance using negative dorks that block SEO listicles."""
+        """Queries SearXNG using dynamic Nemotron dorks that block SEO listicles."""
         clean_comp = company.strip()
         clean_role = role.strip() if role and role.lower() not in ["all", "general", ""] else "Software Engineer"
-        query = (
+        query = custom_query or (
             f'"{clean_comp}" "{clean_role}" ("interview experience" OR "was asked" OR "onsite round" OR "system design round") '
             f'-intitle:"top 50" -intitle:"top 100" -intitle:"questions and answers"'
         )
@@ -88,6 +89,7 @@ class OpenWebCollector:
         company: str,
         role: str,
         page: int = 1,
+        custom_query: Optional[str] = None,
     ) -> List[str]:
         """
         Resilient zero-dependency fallback: queries DuckDuckGo HTML endpoint
@@ -95,7 +97,7 @@ class OpenWebCollector:
         """
         clean_comp = company.strip()
         clean_role = role.strip() if role and role.lower() not in ["all", "general", ""] else "Software Engineer"
-        query = f'{clean_comp} {clean_role} interview experience was asked coding round'
+        query = custom_query or f'{clean_comp} {clean_role} interview experience was asked coding round'
 
         urls = []
         try:
@@ -123,12 +125,43 @@ class OpenWebCollector:
 
         return list(dict.fromkeys(urls))
 
-    async def discover_urls(self, client: Any, company: str, role: str, page: int = 1) -> List[str]:
-        """Discovers URLs using SearXNG first, falling back to DuckDuckGo multi-engine search."""
-        urls = await self._discover_urls_searxng(client, company, role, page=page)
-        if not urls:
-            urls = await self._discover_urls_duckduckgo_fallback(client, company, role, page=page)
-        return urls
+    async def discover_urls(
+        self,
+        client: Any,
+        company: str,
+        role: str,
+        page: int = 1,
+        yoe: float = 3.0,
+        skills: Optional[List[str]] = None,
+        round_number: Optional[int] = None,
+    ) -> List[str]:
+        """
+        Discovers URLs using dynamic Nemotron-generated domain dorks across SearXNG
+        and DuckDuckGo, adapting to the target company, role, YoE, skills, and specific round.
+        """
+        from models.model_manager import get_model_manager
+        mm = get_model_manager()
+        dorks_data = await mm.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
+        round_dorks = dorks_data.get("round_dorks", {})
+
+        queries_to_try = []
+        if round_number:
+            key_map = {1: "round_1_oa", 2: "round_2_dsa", 3: "round_3_lld", 4: "round_4_hld", 5: "round_5_hr"}
+            target_key = key_map.get(round_number, "round_2_dsa")
+            queries_to_try.extend(round_dorks.get(target_key, []))
+        else:
+            for q_list in round_dorks.values():
+                if q_list:
+                    queries_to_try.append(q_list[0])
+
+        all_urls: List[str] = []
+        for q_str in queries_to_try[:3]:
+            urls = await self._discover_urls_searxng(client, company, role, page=page, custom_query=q_str)
+            if not urls:
+                urls = await self._discover_urls_duckduckgo_fallback(client, company, role, page=page, custom_query=q_str)
+            all_urls.extend(urls)
+
+        return list(dict.fromkeys(all_urls))
 
     async def fetch_and_extract_article(self, client: Any, url: str) -> Optional[Dict[str, Any]]:
         """
