@@ -1,47 +1,47 @@
 {
   "dataset_name": "Interview Intelligence Production Question Corpus",
   "version": "1.6.0",
-  "last_maintained": "2026-11-24T05:58:19.237508",
-  "total_questions": 376,
+  "last_maintained": "2026-11-24T06:37:27.196370",
+  "total_questions": 332,
   "total_companies": 44,
   "round_breakdown": {
     "round_1": {
       "name": "Round 1: Online Assessment (OA) / Screening",
-      "count": 242,
+      "count": 228,
       "file": "splits/round_1_oa.jsonl"
     },
     "round_2": {
       "name": "Round 2: Core Coding & Problem Solving (DSA)",
-      "count": 58,
+      "count": 35,
       "file": "splits/round_2_dsa.jsonl"
     },
     "round_3": {
       "name": "Round 3: Machine Coding & Concurrency (LLD)",
-      "count": 25,
+      "count": 24,
       "file": "splits/round_3_machine_coding.jsonl"
     },
     "round_4": {
       "name": "Round 4: Large-Scale System Design & Scalability",
-      "count": 33,
+      "count": 26,
       "file": "splits/round_4_system_design.jsonl"
     },
     "round_5": {
       "name": "Round 5: Behavioral, Culture & Senior Leadership",
-      "count": 18,
+      "count": 19,
       "file": "splits/round_5_behavioral.jsonl"
     }
   },
   "top_companies": {
-    "Google": 67,
+    "Google": 27,
     "Amazon": 22,
     "Stripe": 20,
-    "Uber": 19,
     "Meta": 18,
+    "Uber": 18,
     "Airbnb": 15,
     "Atlassian": 14,
-    "NVIDIA": 13,
-    "Netflix": 12,
+    "NVIDIA": 12,
     "Microsoft": 11,
+    "Netflix": 10,
     "Salesforce": 10,
     "Zepto": 10,
     "Databricks": 9,
@@ -49,24 +49,23 @@
     "OpenAI": 9
   },
   "difficulty_breakdown": {
-    "Medium": 303,
-    "Hard": 73
+    "Medium": 261,
+    "Hard": 71
   },
   "category_breakdown": {
-    "Data Structures and Algorithms": 98,
-    "System Design": 45,
-    "Trees and Graphs": 43,
-    "Computer Networks": 38,
+    "Data Structures and Algorithms": 92,
+    "System Design": 36,
+    "Trees and Graphs": 36,
     "DBMS and SQL": 35,
-    "Operating Systems": 28,
-    "Arrays and Strings": 25,
-    "HR and Behavioral": 19,
+    "Computer Networks": 30,
+    "Operating Systems": 26,
+    "Arrays and Strings": 22,
+    "HR and Behavioral": 14,
     "Machine Learning": 12,
-    "Object-Oriented Programming": 11,
-    "Product Management": 8,
-    "Linked Lists": 7,
+    "Product Management": 10,
+    "Object-Oriented Programming": 9,
     "Dynamic Programming": 5,
-    "UI/UX Design": 2
+    "Linked Lists": 5
   },
   "export_formats": {
     "jsonl": "data/interview_intelligence_dataset.jsonl",

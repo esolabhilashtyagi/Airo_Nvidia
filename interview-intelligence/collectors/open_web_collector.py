@@ -24,7 +24,7 @@ import trafilatura
 
 # Domains that host generic discussions, video content, or require login walls
 BLOCKED_DOMAINS = {
-    "news.ycombinator.com", "youtube.com", "www.youtube.com",
+    "news.ycombinator.com", "ycombinator.com", "hn.algolia.com", "youtube.com", "www.youtube.com",
     "linkedin.com", "www.linkedin.com", "pinterest.com", "www.pinterest.com",
     "quora.com", "www.quora.com", "facebook.com", "www.facebook.com",
     "twitter.com", "x.com", "instagram.com", "tiktok.com"

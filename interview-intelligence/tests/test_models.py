@@ -16,7 +16,7 @@ def test_fallback_nlp_extraction():
     )
     result = nlp.extract_interview_entities(text)
     assert result["company_name"] == "Google"
-    assert "SDE" in result["job_role"]
+    assert "Software Development Engineer" in result["job_role"] or "SDE" in result["job_role"]
     assert len(result["questions"]) >= 1
 
 

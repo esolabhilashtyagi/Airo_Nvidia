@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from database.repository import get_db_repository
 from database.models import InterviewQuestion, QuestionEmbedding
-from agents.deduplication_agent import canonicalize_text
+from agents.deduplication_agent import canonicalize_text, calculate_containment_similarity
+from models.fallback_models import normalize_canonical_role, STOP_WORDS
 from models.embedding_model import LocalEmbeddingModel
 from core.logging import logger
 import uuid
@@ -189,7 +190,7 @@ def export_dataset() -> Dict[str, Any]:
 
 def purge_noise_and_junk(dry_run: bool = False) -> Dict[str, Any]:
     """
-    Purges synthetic clones, HTML fragments, blog headlines, and broken categories.
+    Purges synthetic clones, HTML fragments, blog headlines, HackerNews comment noise, and broken categories.
     """
     db = get_db_repository()
     purged_ids = []
@@ -200,12 +201,21 @@ def purge_noise_and_junk(dry_run: bool = False) -> Dict[str, Any]:
         for q in questions:
             text = q.question_text or ""
             cat = q.question_category or ""
+            url = (q.original_url or "").lower()
+            plat = q.source_platform or ""
 
             is_junk = False
             reason = ""
 
+            # Check HackerNews comments / item?id=
+            if any(hn in url for hn in ["news.ycombinator.com", "item?id=", "algolia.com"]):
+                is_junk = True
+                reason = "HackerNews comment URL"
+            elif plat in ["Developer Technical Discussion", "HackerNews", "HackerNews Public Live Index"]:
+                is_junk = True
+                reason = f"Unwanted platform: {plat}"
             # Check HTML noise
-            if any(tag in text.lower() for tag in ["<details", "<summary", "<div", "<span", "<table", "<tr", "<td"]):
+            elif any(tag in text.lower() for tag in ["<details", "<summary", "<div", "<span", "<table", "<tr", "<td"]):
                 is_junk = True
                 reason = "HTML tags in question text"
             # Check broken categories
@@ -216,8 +226,16 @@ def purge_noise_and_junk(dry_run: bool = False) -> Dict[str, Any]:
             elif len(text.split()) < 10 or len(text.strip()) < 40:
                 is_junk = True
                 reason = "Question too short (<10 words)"
-            # Check blog headlines or opinion rants
-            elif text.startswith("Deconstructed:") or "Interview Questions for Growth from" in text or "would you tolerate male-only" in text.lower():
+            # Check conversational artifacts, blog headlines, or rants
+            elif (
+                text.startswith("Deconstructed:")
+                or text.startswith("Maybe these are the types")
+                or text.startswith("Then erase it and try")
+                or text.startswith("Front end engineer and your stack")
+                or text.startswith("Key Insights for Improving UX")
+                or "Interview Questions for Growth from" in text
+                or "would you tolerate male-only" in text.lower()
+            ):
                 is_junk = True
                 reason = "Blog headline or forum debate noise"
 
@@ -241,17 +259,83 @@ def purge_noise_and_junk(dry_run: bool = False) -> Dict[str, Any]:
     }
 
 
+def normalize_dataset_roles_and_rounds(dry_run: bool = False) -> Dict[str, Any]:
+    """
+    Standardizes job role casing across canonical titles and syncs round numbers
+    for multi-round experiences (e.g. sample_google_sde2).
+    """
+    db = get_db_repository()
+    updated_count = 0
+
+    with db.get_session() as session:
+        questions = session.query(InterviewQuestion).all()
+        for q in questions:
+            # 1. Normalize role casing
+            norm_role = normalize_canonical_role(q.job_role)
+            if q.job_role != norm_role:
+                q.job_role = norm_role
+                updated_count += 1
+
+            # 2. Fix round sync on sample_google_sde2
+            if q.original_url and "sample_google_sde2" in q.original_url:
+                t_low = (q.question_text or "").lower()
+                if "rate limiter" in t_low:
+                    q.round_number = 4
+                    q.interview_round = "Round 4: Large-Scale System Design"
+                    q.question_category = "System Design"
+                    updated_count += 1
+                elif "disagreement" in t_low or "conflict" in t_low:
+                    q.round_number = 5
+                    q.interview_round = "Round 5: Behavioral & Leadership"
+                    q.question_category = "HR and Behavioral"
+                    updated_count += 1
+                elif "k-group" in t_low:
+                    q.round_number = 2
+                    q.interview_round = "Round 2: Core Coding & Problem Solving (DSA)"
+                    q.question_category = "Linked Lists"
+                    updated_count += 1
+                elif "subarray" in t_low:
+                    q.round_number = 1
+                    q.interview_round = "Round 1: Online Assessment (OA)"
+                    q.question_category = "Arrays and Strings"
+                    updated_count += 1
+                elif "lowest common ancestor" in t_low:
+                    q.round_number = 1
+                    q.interview_round = "Round 1: Online Assessment (OA)"
+                    q.question_category = "Trees and Graphs"
+                    updated_count += 1
+
+            # 3. Fix Senior Product Manager categories
+            if q.job_role == "Senior Product Manager" and q.question_category == "Data Structures and Algorithms":
+                t_low = (q.question_text or "").lower()
+                if "collaborative editing" in t_low or "docs" in t_low:
+                    q.question_category = "System Design"
+                    updated_count += 1
+                elif any(k in t_low for k in ["checkout", "monetization", "strategy", "respond to generative ai"]):
+                    q.question_category = "Product Management"
+                    updated_count += 1
+
+        if not dry_run and updated_count > 0:
+            session.commit()
+            logger.info(f"Normalized roles and rounds for {updated_count} questions.")
+
+    return {"updated_count": updated_count, "dry_run": dry_run}
+
+
 def deduplicate_dataset(dry_run: bool = False) -> Dict[str, Any]:
     """
-    Identifies and collapses duplicate questions using canonical <NUM> unit masking.
+    Identifies and collapses duplicate questions using:
+    1. Exact canonical <NUM> unit masking
+    2. Containment token similarity >= 0.70 (collapses short summaries into full problems)
     """
     db = get_db_repository()
     duplicates_to_delete = []
 
     with db.get_session() as session:
         questions = session.query(InterviewQuestion).all()
-        canonical_groups: Dict[tuple, List[InterviewQuestion]] = {}
 
+        # Step 1: Exact canonical hash groups
+        canonical_groups: Dict[tuple, List[InterviewQuestion]] = {}
         for q in questions:
             norm_key = (
                 (q.company_name or "").lower().strip(),
@@ -261,21 +345,44 @@ def deduplicate_dataset(dry_run: bool = False) -> Dict[str, Any]:
 
         for norm_key, group in canonical_groups.items():
             if len(group) > 1:
-                # Keep highest confidence or earliest
+                # Keep highest confidence or longest text
                 sorted_group = sorted(
                     group,
-                    key=lambda x: (getattr(x, "confidence_score", 0.0) or 0.0),
+                    key=lambda x: (getattr(x, "confidence_score", 0.0) or 0.0, len(x.question_text or "")),
                     reverse=True,
                 )
                 keep_item = sorted_group[0]
                 remove_items = sorted_group[1:]
                 for rem in remove_items:
-                    duplicates_to_delete.append(rem.id)
-                    if not dry_run:
-                        session.query(QuestionEmbedding).filter(QuestionEmbedding.question_id == rem.id).delete()
-                        session.delete(rem)
+                    if rem.id not in duplicates_to_delete:
+                        duplicates_to_delete.append(rem.id)
+
+        # Step 2: Containment similarity (collapses brief summaries like rate limiter or tech lead disagreement)
+        questions_by_company: Dict[str, List[InterviewQuestion]] = {}
+        for q in questions:
+            if q.id not in duplicates_to_delete:
+                c_name = (q.company_name or "").lower().strip()
+                questions_by_company.setdefault(c_name, []).append(q)
+
+        for c_name, comp_questions in questions_by_company.items():
+            # Sort longest to shortest so we always keep the richer problem statement
+            comp_questions.sort(key=lambda x: len(x.question_text or ""), reverse=True)
+            for i in range(len(comp_questions)):
+                q1 = comp_questions[i]
+                if q1.id in duplicates_to_delete:
+                    continue
+                for j in range(i + 1, len(comp_questions)):
+                    q2 = comp_questions[j]
+                    if q2.id in duplicates_to_delete:
+                        continue
+                    containment = calculate_containment_similarity(q1.question_text, q2.question_text)
+                    if containment >= 0.70:
+                        duplicates_to_delete.append(q2.id)
 
         if not dry_run and duplicates_to_delete:
+            for d_id in duplicates_to_delete:
+                session.query(QuestionEmbedding).filter(QuestionEmbedding.question_id == d_id).delete()
+                session.query(InterviewQuestion).filter(InterviewQuestion.id == d_id).delete()
             session.commit()
             logger.info(f"Deduplicated {len(duplicates_to_delete)} duplicate questions.")
 
@@ -374,12 +481,17 @@ def main():
     args = parser.parse_args()
 
     if args.action in ["purge", "full-maintenance"]:
-        print("\n🧹 Purging HTML noise, broken categories, and non-question fragments...")
+        print("\n🧹 Purging HTML noise, broken categories, HackerNews comments, and non-question fragments...")
         p_res = purge_noise_and_junk(dry_run=args.dry_run)
         print(f"Purge complete: {p_res['purged_count']} items {'flagged' if args.dry_run else 'purged'}.")
 
+    if args.action in ["full-maintenance", "sync"]:
+        print("\n🏷️ Normalizing canonical roles and synchronizing multi-round numbers...")
+        n_res = normalize_dataset_roles_and_rounds(dry_run=args.dry_run)
+        print(f"Normalization complete: {n_res['updated_count']} questions updated.")
+
     if args.action in ["deduplicate", "full-maintenance"]:
-        print("\n🔍 Running canonical <NUM> unit-masked deduplication...")
+        print("\n🔍 Running canonical <NUM> and containment token deduplication...")
         d_res = deduplicate_dataset(dry_run=args.dry_run)
         print(f"Deduplication complete: {d_res['duplicate_count']} duplicates {'flagged' if args.dry_run else 'removed'}.")
 

@@ -99,22 +99,17 @@ class TaskScheduler:
                                 company=company, role=role, page=cursor_page, max_articles=2
                             )
                             for art in articles:
+                                content = art.get("content") or art.get("full_text") or ""
                                 questions = await coding_agent.extract_questions_from_full_article(
-                                    art["full_text"], company=company, role=role
+                                    article_content=content,
+                                    company=company,
+                                    role=role,
+                                    url=art.get("url", ""),
+                                    platform=art.get("platform", "Open Web"),
                                 )
-                                for q_text, r_num, r_name in questions:
-                                    saved = db.save_interview_question(
-                                        company_name=company,
-                                        job_role=role,
-                                        round_number=r_num,
-                                        interview_round=r_name,
-                                        question_text=q_text,
-                                        source_platform=art.get("source_domain", "Open Web"),
-                                        original_url=art.get("url", ""),
-                                        source_type="scraped",
-                                    )
-                                    if saved:
-                                        self._harvester_stats["total_harvested"] += 1
+                                if questions:
+                                    saved = db.bulk_insert_questions(questions)
+                                    self._harvester_stats["total_harvested"] += saved
                         except Exception as e:
                             logger.debug(f"Background harvest cycle error for {company} {role}: {e}")
 

@@ -995,7 +995,7 @@ class DatabaseRepository:
             return 0
 
         inserted_count = 0
-        from models.fallback_models import strip_question_wrappers, get_dedup_hash, FallbackNLPModel
+        from models.fallback_models import strip_question_wrappers, get_dedup_hash, FallbackNLPModel, normalize_canonical_role
         nlp_cls = FallbackNLPModel()
 
         with self.get_session() as session:
@@ -1005,8 +1005,13 @@ class DatabaseRepository:
                 hashes = []
 
                 for qd in chunk:
-                    orig_url = qd.get("original_url", "")
-                    if any(bad in orig_url for bad in ["engineering_blogs", "company blog", "company blog.com"]):
+                    orig_url = (qd.get("original_url") or "").lower()
+                    source_plat = qd.get("source_platform", "")
+
+                    # Hard block all HackerNews comments and synthetic URL noise
+                    if any(bad in orig_url for bad in ["engineering_blogs", "company blog", "company blog.com", "news.ycombinator.com", "item?id=", "algolia.com"]):
+                        continue
+                    if source_plat in ["Developer Technical Discussion", "HackerNews", "HackerNews Public Live Index"]:
                         continue
 
                     c_name = qd.get("company_name", "Google").strip()
@@ -1026,8 +1031,10 @@ class DatabaseRepository:
                     qd_clean["question_text"] = q_text
 
                     cur_cat = qd.get("question_category", "")
+                    r_num = qd.get("round_number")
+                    r_name = qd.get("interview_round")
                     if not cur_cat or "Domain" in cur_cat or cur_cat in ["General Technical Problem Solving", "Technology"]:
-                        classified = nlp_cls.classify_question(q_text)
+                        classified = nlp_cls.classify_question(q_text, round_number=r_num, interview_round=r_name)
                         qd_clean["question_category"] = classified["category"]
                         qd_clean["difficulty"] = classified["difficulty"]
 
@@ -1049,7 +1056,7 @@ class DatabaseRepository:
                         continue
 
                     c_name = qd.get("company_name", "Technology Firm").strip()
-                    j_role = qd.get("job_role", "Software Development Engineer").strip()
+                    j_role = normalize_canonical_role(qd.get("job_role", "Software Development Engineer II"))
                     q_text = qd.get("question_text", "").strip()
                     q_cat = qd.get("question_category", "General Technical Problem Solving")
                     diff = qd.get("difficulty", "Medium")
@@ -1173,8 +1180,17 @@ class DatabaseRepository:
         is_all_role = not clean_role or clean_role.lower() in ["all", "all roles", "any"]
         clean_skills = [s.strip().lower() for s in (skills or []) if s.strip()]
 
+        from models.fallback_models import normalize_canonical_role, STOP_WORDS
+
         with self.get_session() as session:
             stmt = select(InterviewQuestion).options(joinedload(InterviewQuestion.coding_problem))
+            # Hard filter against HackerNews comments and discussion noise
+            stmt = stmt.filter(
+                ~InterviewQuestion.original_url.ilike("%news.ycombinator.com%"),
+                ~InterviewQuestion.original_url.ilike("%item?id=%"),
+                ~InterviewQuestion.original_url.ilike("%algolia.com%"),
+                InterviewQuestion.source_platform.notin_(["Developer Technical Discussion", "HackerNews", "HackerNews Public Live Index"])
+            )
             if round_number is not None:
                 stmt = stmt.filter(InterviewQuestion.round_number == round_number)
             if difficulty and difficulty != "All":
@@ -1212,18 +1228,19 @@ class DatabaseRepository:
 
                 # Role Match (+40 pts) and Role Incompatibility Filter
                 if not is_all_role:
+                    canon_target = normalize_canonical_role(clean_role).lower()
                     r_low = clean_role.lower()
                     q_role_low = (q.job_role or "").lower()
                     q_cat_low = (q.question_category or "").lower()
 
                     # Check for fundamental role clash (e.g. SDE vs Sales vs Product Management)
-                    is_tech_role = any(k in r_low for k in ["engineer", "sde", "developer", "backend", "frontend", "systems", "cuda", "ml", "ai"])
+                    is_tech_role = any(k in r_low or k in canon_target for k in ["engineer", "sde", "developer", "backend", "frontend", "systems", "cuda", "ml", "ai"])
                     is_pm_question = "product" in q_role_low or q_cat_low == "product management"
                     is_sales_question = "sales" in q_role_low or "finance" in q_role_low
                     if is_tech_role and (is_pm_question or is_sales_question):
                         continue
 
-                    if r_low in q_role_low:
+                    if r_low in q_role_low or canon_target in q_role_low or q_role_low in canon_target:
                         score += 40
                         reasons.append("Role Match")
                     elif any(w in q_role_low for w in r_low.split() if len(w) > 3):
@@ -1260,7 +1277,39 @@ class DatabaseRepository:
                 scored.append((score, q))
 
             scored.sort(key=lambda x: x[0], reverse=True)
-            return [item[1] for item in scored[:limit]]
+
+            # Apply Containment Deduplication on the fly to eliminate near-duplicates
+            unique_results = []
+            seen_token_sets = []
+
+            for score, q in scored:
+                # Exclude any HN comment noise
+                q_url = (q.original_url or "").lower()
+                if "news.ycombinator.com" in q_url or "item?id=" in q_url:
+                    continue
+                if q.source_platform in ["Developer Technical Discussion", "HackerNews", "HackerNews Public Live Index"]:
+                    continue
+
+                q_tokens = set(re.findall(r"[a-z0-9]+", (q.question_text or "").lower())) - STOP_WORDS
+                if len(q_tokens) < 3:
+                    continue
+
+                is_near_dup = False
+                for existing_tokens, existing_q in seen_token_sets:
+                    intersection = len(q_tokens & existing_tokens)
+                    min_len = min(len(q_tokens), len(existing_tokens))
+                    containment = (intersection / min_len) if min_len > 0 else 0
+                    if containment >= 0.70 and min_len >= 4:
+                        is_near_dup = True
+                        break
+
+                if not is_near_dup:
+                    seen_token_sets.append((q_tokens, q))
+                    unique_results.append(q)
+                    if len(unique_results) >= limit:
+                        break
+
+            return unique_results
 
     def get_question_by_id(self, question_id: str) -> Optional[InterviewQuestion]:
         with self.get_session() as session:

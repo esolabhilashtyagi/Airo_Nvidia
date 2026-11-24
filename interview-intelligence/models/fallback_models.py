@@ -27,6 +27,13 @@ CANONICAL_CATEGORIES = [
 ]
 
 
+STOP_WORDS = {
+    "a", "an", "the", "in", "on", "of", "to", "for", "with", "and", "or", "is",
+    "are", "was", "were", "it", "at", "by", "from", "as", "be", "that", "this",
+    "you", "your", "i", "we", "me", "my", "using", "given"
+}
+
+
 def strip_question_wrappers(text: str) -> str:
     """
     Strips synthetic meta-wrappers, interview preambles, and conversational artifacts:
@@ -83,6 +90,40 @@ def canonicalize_text(text: str) -> str:
     normalized = re.sub(r"[^\w\s<>]", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip().lower()
     return normalized
+
+
+ROLE_NORMALIZATION_MAP = {
+    "sde": "Software Development Engineer II",
+    "sde 1": "Software Development Engineer I",
+    "sde-1": "Software Development Engineer I",
+    "sde i": "Software Development Engineer I",
+    "sde 2": "Software Development Engineer II",
+    "sde-2": "Software Development Engineer II",
+    "sde ii": "Software Development Engineer II",
+    "sde 3": "Senior Software Development Engineer",
+    "sde-3": "Senior Software Development Engineer",
+    "sde iii": "Senior Software Development Engineer",
+    "swe": "Software Engineer",
+    "software engineer": "Software Engineer",
+    "software development engineer": "Software Development Engineer II",
+    "software development engineer ii": "Software Development Engineer II",
+    "systems engineer": "Systems Software Engineer",
+    "systems & infrastructure software engineer": "Systems Software Engineer",
+    "systems software engineer": "Systems Software Engineer",
+    "backend engineer": "Backend Engineer",
+    "backend & database engineer": "Backend Engineer",
+    "ml engineer": "Machine Learning Engineer",
+    "machine learning engineer": "Machine Learning Engineer",
+    "product manager": "Product Manager",
+    "senior product manager": "Senior Product Manager",
+}
+
+
+def normalize_canonical_role(role: str) -> str:
+    if not role:
+        return "Software Development Engineer II"
+    clean = re.sub(r"\s+", " ", role.strip().lower())
+    return ROLE_NORMALIZATION_MAP.get(clean, role.strip().title())
 
 
 def get_dedup_hash(text: str) -> str:
@@ -243,9 +284,9 @@ class FallbackNLPModel:
 
             extracted_questions.append(c)
 
-        # Do NOT fall back to dumping the entire discussion text
+        # Multi-Round Parser: Matches "Round X [Topic]:", "Round X: [Topic]", or named rounds
         round_matches = list(re.finditer(
-            r"(?:^|\n)\s*(?:(?:Then\s+in\s+)?Round\s*(\d+)|(Online Assessment|OA|Machine Coding|System Design|Coding Round|Technical Round|Behavioral Round|HR Round|Leadership Round|Bar Raiser))\s*[:\-]\s*([^\n]*)",
+            r"(?:^|\n)\s*(?:(?:Then\s+in\s+)?Round\s*(\d+)(?:\s*[:\-]?\s*([^:\n\r]+?))?|(Online Assessment|OA|Machine Coding|System Design|Coding Round|Technical Round|Behavioral Round|HR Round|Leadership Round|Bar Raiser))\s*[:\-]\s*([^\n]*)",
             text, re.IGNORECASE
         ))
 
@@ -253,16 +294,32 @@ class FallbackNLPModel:
         if round_matches:
             for idx, rm in enumerate(round_matches):
                 r_num_str = rm.group(1)
-                r_named_topic = rm.group(2)
-                r_inline = rm.group(3) or ""
+                r_topic_pre = rm.group(2) or ""
+                r_named_topic = rm.group(3) or ""
+                r_inline = rm.group(4) or ""
 
-                cur_r_num = int(r_num_str) if r_num_str else (idx + 1)
-                topic_candidate = r_named_topic or r_inline or "Technical Round"
-                cur_r_topic = "Technical Assessment"
-                for t in ["Screening", "Online Assessment", "Machine Coding", "System Design", "Product Sense", "Portfolio", "Live Coding", "Whiteboard", "Leadership", "Culture Fit", "Behavioral", "Bar Raiser", "HR"]:
-                    if re.search(rf"\b{t}\b", topic_candidate, re.IGNORECASE):
-                        cur_r_topic = t
-                        break
+                combined_topic = f"{r_topic_pre} {r_named_topic} {r_inline}".strip()
+
+                # Canonical round mapping
+                if re.search(r"\b(System Design|HLD|Architecture|Distributed System)\b", combined_topic, re.IGNORECASE):
+                    cur_r_num = 4
+                    cur_r_topic = "Large-Scale System Design"
+                elif re.search(r"\b(Machine Coding|LLD|Clean Architecture|Low Level Design)\b", combined_topic, re.IGNORECASE):
+                    cur_r_num = 3
+                    cur_r_topic = "Machine Coding & Concurrency (LLD)"
+                elif re.search(r"\b(Behavioral|Leadership|Googleyness|Culture|HR|Bar Raiser)\b", combined_topic, re.IGNORECASE):
+                    cur_r_num = 5
+                    cur_r_topic = "Behavioral & Leadership"
+                elif re.search(r"\b(Online Assessment|OA|Screening|Phone Screen)\b", combined_topic, re.IGNORECASE):
+                    cur_r_num = 1
+                    cur_r_topic = "Online Assessment (OA)"
+                elif re.search(r"\b(Coding|DSA|Problem Solving|Algorithms|Whiteboard)\b", combined_topic, re.IGNORECASE):
+                    cur_r_num = 2
+                    cur_r_topic = "Core Coding & Problem Solving (DSA)"
+                else:
+                    cur_r_num = int(r_num_str) if r_num_str else (idx + 1)
+                    cur_r_topic = "Technical Assessment"
+
                 cur_r_name = f"Round {cur_r_num}: {cur_r_topic}"
 
                 start_p = rm.start()
@@ -270,7 +327,10 @@ class FallbackNLPModel:
                 sec_text = text[start_p:end_p]
 
                 for eq in extracted_questions:
-                    if eq[:25].lower() in sec_text.lower():
+                    # Robust alphanumeric substring check
+                    eq_sub = re.sub(r"\W+", "", eq.lower())[:20]
+                    sec_sub = re.sub(r"\W+", "", sec_text.lower())
+                    if eq_sub and eq_sub in sec_sub:
                         questions_with_rounds.append((eq, cur_r_num, cur_r_name))
 
         assigned_q_texts = {q[0] for q in questions_with_rounds}
@@ -280,7 +340,7 @@ class FallbackNLPModel:
 
         return {
             "company_name": company,
-            "job_role": role,
+            "job_role": normalize_canonical_role(role),
             "interview_round": round_name,
             "experience_level": "Mid-Level (2-4 yrs)",
             "questions": extracted_questions,
@@ -288,19 +348,35 @@ class FallbackNLPModel:
             "raw_text": text,
         }
 
-    def classify_question(self, question_text: str) -> Dict[str, str]:
+    def classify_question(
+        self,
+        question_text: str,
+        round_number: Optional[int] = None,
+        interview_round: Optional[str] = None,
+    ) -> Dict[str, str]:
         """
         Dynamically classifies question topic domain and cognitive difficulty level
         strictly into canonical categories without the '* Domain' bug.
-        Priority-ordered to prevent false collisions (e.g. 'metric tree' -> Product Management,
-        'rate limiter' -> System Design).
+        Strips URLs to prevent web link domain false collisions (e.g. 'http://...' -> Computer Networks).
+        Respects interview round context (e.g. Round 5 -> HR and Behavioral, Round 4 -> System Design).
         """
         text_clean = strip_question_wrappers(question_text)
-        text_lower = (text_clean or "").lower()
+        # Strip URLs to prevent http:// or https:// from triggering Computer Networks
+        text_no_urls = re.sub(r"https?://\S+", "", text_clean)
+        text_lower = (text_no_urls or "").lower()
         words = set(re.findall(r"[a-z0-9]+", text_lower))
 
+        r_name_low = (interview_round or "").lower()
+        is_r5 = round_number == 5 or any(k in r_name_low for k in ["behavioral", "leadership", "culture", "googleyness", "hr"])
+        is_r4 = round_number == 4 or any(k in r_name_low for k in ["system design", "architecture", "distributed"])
+        is_r3 = round_number == 3 or any(k in r_name_low for k in ["machine coding", "lld", "low level"])
+
+        # Priority 0: Contextual Round Overrides for Behavioral
+        if is_r5 and not any(k in text_lower for k in ["leetcode", "array", "binary tree", "graph", "dynamic programming", "sql"]):
+            category = "HR and Behavioral"
+
         # Priority 1: Product Management (must precede Trees and Graphs for 'metric tree')
-        if any(k in text_lower for k in [
+        elif any(k in text_lower for k in [
             "metric tree", "north star", "product sense", "user journey", "customer journey",
             "retention curve", "dau/mau", "dau", "mau", "prd", "personas", "gong", "okr"
         ]) or (bool(words & {"product", "persona", "personas", "retention", "onboarding"}) and bool(words & {"metric", "metrics", "feature", "launch", "roadmap"})):
@@ -397,9 +473,16 @@ class FallbackNLPModel:
         ]) or bool(words & {"behavioral", "leadership", "culture", "motivation", "mentorship"}):
             category = "HR and Behavioral"
 
-        # Priority 13: Canonical Fallback
+        # Priority 13: Canonical Fallback (Context-Aware)
         else:
-            category = "Data Structures and Algorithms"
+            if is_r5:
+                category = "HR and Behavioral"
+            elif is_r4:
+                category = "System Design"
+            elif is_r3:
+                category = "Object-Oriented Programming"
+            else:
+                category = "Data Structures and Algorithms"
 
         # Cognitive Difficulty Assessment
         hard_signals = any(k in text_lower for k in [

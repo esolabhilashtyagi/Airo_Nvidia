@@ -316,70 +316,22 @@ class LiveWebScraper:
             logger.warning(f"Open-web harvest encountered: {e}")
 
         # =========================================================================
-        # STAGE 4: Developer Discussion Index & Open Repositories
+        # STAGE 4: Developer Discussion Index (STRICTLY EXCLUDES HN COMMENTS)
         # =========================================================================
-        if not limit or len(candidate_questions) < limit:
-            search_terms = []
-            if keyword:
-                search_terms.append(f"{comp_target} {keyword} coding interview")
-            else:
-                search_terms.append(f"{comp_target} coding interview question")
-                search_terms.append(f"{comp_target} system design interview")
-
-            async with httpx.AsyncClient(headers=self.headers, timeout=12.0) as client:
-                for term in search_terms:
-                    if limit and len(candidate_questions) >= limit:
-                        break
-                    try:
-                        url = f"https://hn.algolia.com/api/v1/search?query={term}&tags=comment&hitsPerPage=50&page={cursor_page % 5}"
-                        res = await client.get(url)
-                        if res.status_code == 200:
-                            hits = res.json().get("hits", [])
-                            scraped_sources_count += len(hits)
-                            for h in hits:
-                                raw_body = h.get("comment_text") or ""
-                                story_url = h.get("story_url") or ""
-                                if any(bd in story_url.lower() for bd in BLOG_DOMAINS):
-                                    continue
-
-                                clean_body = self._clean_html_and_markdown(raw_body)
-                                if len(clean_body) >= 50:
-                                    post_id = h.get("objectID")
-                                    hit_url = f"https://news.ycombinator.com/item?id={post_id}"
-                                    qs = self._extract_questions_from_text(clean_body, comp_target)
-                                    for q in qs:
-                                        q_text = q["question_text"]
-                                        q_hash = get_dedup_hash(q_text)
-                                        if q_hash in seen_hashes:
-                                            continue
-                                        seen_hashes.add(q_hash)
-
-                                        cls = self.nlp.classify_question(q_text)
-                                        assigned_comp = comp_target if comp_target.lower() in clean_body.lower() else "Core Technical Practice"
-                                        assigned_role = self._infer_role_from_category(cls["category"], role_target)
-
-                                        candidate_questions.append({
-                                            "company_name": assigned_comp,
-                                            "job_role": assigned_role,
-                                            "question_text": q_text,
-                                            "question_category": cls["category"],
-                                            "difficulty": q["difficulty"],
-                                            "round_number": q["round_number"],
-                                            "interview_round": q["interview_round"],
-                                            "source_platform": "Developer Technical Discussion",
-                                            "original_url": hit_url,
-                                            "confidence_score": 0.90,
-                                            "skills_tested": [cls["category"]],
-                                        })
-                                        if limit and len(candidate_questions) >= limit:
-                                            break
-                    except Exception as e:
-                        logger.debug(f"Discussion scrape encountered: {e}")
+        # We strictly block all news.ycombinator.com and random forum comments
+        # to ensure 0% comment noise in the repository.
 
         # Bulk insert into database with canonical number-masked deduplication
         stored_count = 0
         if candidate_questions:
-            stored_count = self.db.bulk_insert_questions(candidate_questions, batch_size=250)
+            # Ensure no HN item slipped in
+            clean_candidates = [
+                q for q in candidate_questions
+                if not any(hn in q.get("original_url", "").lower() for hn in ["news.ycombinator.com", "item?id=", "algolia.com"])
+                and q.get("source_platform") not in ["HackerNews", "HackerNews Public Live Index", "Developer Technical Discussion"]
+            ]
+            if clean_candidates:
+                stored_count = self.db.bulk_insert_questions(clean_candidates, batch_size=250)
 
         return {
             "company": comp_target,

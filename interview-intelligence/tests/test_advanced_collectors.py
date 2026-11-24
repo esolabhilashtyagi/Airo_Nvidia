@@ -109,3 +109,35 @@ def test_dataset_audit_health():
     assert audit["status"] == "HEALTHY"
     assert audit["duplicate_hashes"] == 0
     assert audit["health_score_pct"] == 100.0
+
+
+def test_containment_similarity_deduplication():
+    from agents.deduplication_agent import calculate_containment_similarity
+
+    q_rate_1 = "Design a distributed rate limiter that handles 500k requests/sec across 3 geographical regions using token bucket."
+    q_rate_2 = "Design a distributed rate limiter that handles 500k requests/sec across 3 regions."
+    assert calculate_containment_similarity(q_rate_1, q_rate_2) >= 0.70
+
+    q_lead_1 = "Tell me about a time you had a technical disagreement with your tech lead and how you resolved it."
+    q_lead_2 = "Tell me about a time you had a technical disagreement with your tech lead."
+    assert calculate_containment_similarity(q_lead_1, q_lead_2) >= 0.70
+
+
+def test_url_stripped_from_classification_no_networks_pollution():
+    from models.fallback_models import FallbackNLPModel
+
+    nlp = FallbackNLPModel()
+    # URLs must not trigger Computer Networks
+    q = "What was interesting was the design of the Go language: http://www.infoq.com/interviews/pike-google-go"
+    cls = nlp.classify_question(q)
+    assert cls["category"] != "Computer Networks"
+
+
+def test_round_5_behavioral_fallback_not_dsa():
+    from models.fallback_models import FallbackNLPModel
+
+    nlp = FallbackNLPModel()
+    q = "Really all you need is the vibe check and team alignment discussion."
+    cls = nlp.classify_question(q, round_number=5, interview_round="Round 5: Behavioral & Leadership (HR)")
+    assert cls["category"] == "HR and Behavioral"
+
