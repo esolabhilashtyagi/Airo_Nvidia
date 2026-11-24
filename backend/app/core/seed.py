@@ -7,7 +7,7 @@ from app.core.database_guards import validate_seed_target
 from app.core.security import hash_password
 from app.models.user import User, UserRole
 from app.models.candidate import CandidateProfile, Company
-from app.models.taxonomy import Industry, IndustryCategory, JobRole, Skill
+from app.models.taxonomy import ExperienceLevel, Industry, IndustryCategory, InterviewRound, JobRole, Skill, Subject, Topic
 from app.models.question import Question, QuestionType, DifficultyLevel, SourceProvenance, ApprovalStatus
 from app.models.module import Module, Lesson
 
@@ -241,55 +241,55 @@ COMPANIES_SEED = [
 ]
 
 
-def seed_database(db: Session):
-    print("🌱 Starting Candidate Dashboard AAIRO database seeding...")
+def seed_database(db: Session, *, include_demo_accounts: bool = True):
+    print("🌱 Starting Candidate Dashboard AAIRO content seeding...")
 
-    # 1. Seed Default Admin User
-    admin = db.query(User).filter(User.email == settings.INITIAL_ADMIN_EMAIL).first()
-    if not admin:
-        admin = User(
-            email=settings.INITIAL_ADMIN_EMAIL,
-            hashed_password=hash_password(settings.INITIAL_ADMIN_PASSWORD),
-            full_name="Aairo System Administrator",
-            role=UserRole.ADMINISTRATOR,
-            is_active=True,
-            is_verified=True
-        )
-        db.add(admin)
-        db.flush()
-        print(f"✅ Created Admin: {settings.INITIAL_ADMIN_EMAIL}")
+    # Demo identities are only for isolated local development. Production's
+    # allowlisted content bootstrap always sets include_demo_accounts=False.
+    if include_demo_accounts:
+        admin = db.query(User).filter(User.email == settings.INITIAL_ADMIN_EMAIL).first()
+        if not admin:
+            admin = User(
+                email=settings.INITIAL_ADMIN_EMAIL,
+                hashed_password=hash_password(settings.INITIAL_ADMIN_PASSWORD),
+                full_name="Aairo System Administrator",
+                role=UserRole.ADMINISTRATOR,
+                is_active=True,
+                is_verified=True
+            )
+            db.add(admin)
+            db.flush()
+            print(f"✅ Created Admin: {settings.INITIAL_ADMIN_EMAIL}")
 
-    # 2. Seed Content Manager
-    manager_email = "manager@aairo.ai"
-    manager = db.query(User).filter(User.email == manager_email).first()
-    if not manager:
-        manager = User(
-            email=manager_email,
-            hashed_password=hash_password("ManagerPass123!"),
-            full_name="Editorial Content Manager",
-            role=UserRole.CONTENT_MANAGER,
-            is_active=True,
-            is_verified=True
-        )
-        db.add(manager)
-        db.flush()
-        print(f"✅ Created Content Manager: {manager_email}")
+        manager_email = "manager@aairo.ai"
+        manager = db.query(User).filter(User.email == manager_email).first()
+        if not manager:
+            manager = User(
+                email=manager_email,
+                hashed_password=hash_password("ManagerPass123!"),
+                full_name="Editorial Content Manager",
+                role=UserRole.CONTENT_MANAGER,
+                is_active=True,
+                is_verified=True
+            )
+            db.add(manager)
+            db.flush()
+            print(f"✅ Created Content Manager: {manager_email}")
 
-    # 3. Seed Demo Candidate User
-    candidate_email = "candidate@aairo.ai"
-    candidate = db.query(User).filter(User.email == candidate_email).first()
-    if not candidate:
-        candidate = User(
-            email=candidate_email,
-            hashed_password=hash_password("CandidatePass123!"),
-            full_name="Alex Mercer",
-            role=UserRole.CANDIDATE,
-            is_active=True,
-            is_verified=True
-        )
-        db.add(candidate)
-        db.flush()
-        print(f"✅ Created Candidate: {candidate_email}")
+        candidate_email = "candidate@aairo.ai"
+        candidate = db.query(User).filter(User.email == candidate_email).first()
+        if not candidate:
+            candidate = User(
+                email=candidate_email,
+                hashed_password=hash_password("CandidatePass123!"),
+                full_name="Alex Mercer",
+                role=UserRole.CANDIDATE,
+                is_active=True,
+                is_verified=True
+            )
+            db.add(candidate)
+            db.flush()
+            print(f"✅ Created Candidate: {candidate_email}")
 
     # 4. Seed Companies
     for c_data in COMPANIES_SEED:
@@ -347,32 +347,33 @@ def seed_database(db: Session):
 
     db.flush()
 
-    # 6. Populate Candidate Profile for Demo Candidate
-    it_ind = industry_map.get("information-technology")
-    profile = db.query(CandidateProfile).filter(CandidateProfile.user_id == candidate.id).first()
-    if not profile and it_ind:
-        profile = CandidateProfile(
-            user_id=candidate.id,
-            candidate_type="working_professional",
-            sub_category="job_seeker",
-            industry_id=it_ind.id,
-            current_company="TechCorp Solutions",
-            current_role="Junior Software Engineer",
-            target_role="Software Engineer",
-            total_experience_months=24,
-            relevant_experience_months=24,
-            employment_status="Employed",
-            key_skills=["Python", "FastAPI", "React", "PostgreSQL", "Docker", "REST APIs"],
-            career_goals="Transition to a senior full-stack systems engineering role at top-tier tech firms.",
-            onboarding_completed=True,
-            onboarding_step=7,
-            interview_rounds_preferred=["Technical", "Coding", "System Design", "HR"],
-            interaction_preference="text",
-            interview_readiness_score=78.5
-        )
-        db.add(profile)
-        db.flush()
-        print("✅ Configured Candidate Profile for Alex Mercer")
+    # Demo profile data is not created in the production content bootstrap.
+    if include_demo_accounts:
+        it_ind = industry_map.get("information-technology")
+        profile = db.query(CandidateProfile).filter(CandidateProfile.user_id == candidate.id).first()
+        if not profile and it_ind:
+            profile = CandidateProfile(
+                user_id=candidate.id,
+                candidate_type="working_professional",
+                sub_category="job_seeker",
+                industry_id=it_ind.id,
+                current_company="TechCorp Solutions",
+                current_role="Junior Software Engineer",
+                target_role="Software Engineer",
+                total_experience_months=24,
+                relevant_experience_months=24,
+                employment_status="Employed",
+                key_skills=["Python", "FastAPI", "React", "PostgreSQL", "Docker", "REST APIs"],
+                career_goals="Transition to a senior full-stack systems engineering role at top-tier tech firms.",
+                onboarding_completed=True,
+                onboarding_step=7,
+                interview_rounds_preferred=["Technical", "Coding", "System Design", "HR"],
+                interaction_preference="text",
+                interview_readiness_score=78.5
+            )
+            db.add(profile)
+            db.flush()
+            print("✅ Configured Candidate Profile for Alex Mercer")
 
     # 7. Seed Centralized Question Bank
     sample_questions = [
@@ -491,17 +492,65 @@ def seed_database(db: Session):
         if not ind:
             continue
         role = role_map.get(q_data.get("role_title"))
+
+        subject = db.query(Subject).filter(
+            Subject.industry_id == ind.id,
+            Subject.name == q_data["subject"],
+        ).first()
+        if subject is None:
+            subject = Subject(industry_id=ind.id, name=q_data["subject"], is_active=True)
+            db.add(subject)
+            db.flush()
+        topic = db.query(Topic).filter(
+            Topic.subject_id == subject.id,
+            Topic.name == q_data["topic"],
+        ).first()
+        if topic is None:
+            topic = Topic(subject_id=subject.id, name=q_data["topic"], is_active=True)
+            db.add(topic)
+            db.flush()
+        interview_round = db.query(InterviewRound).filter(
+            InterviewRound.industry_id == ind.id,
+            InterviewRound.name == q_data["interview_round"],
+        ).first()
+        if interview_round is None:
+            interview_round = InterviewRound(industry_id=ind.id, name=q_data["interview_round"], is_active=True)
+            db.add(interview_round)
+            db.flush()
+        experience_level = db.query(ExperienceLevel).filter(
+            ExperienceLevel.name == q_data["difficulty"].value,
+        ).first()
+        if experience_level is None:
+            experience_level = ExperienceLevel(name=q_data["difficulty"].value, is_active=True)
+            db.add(experience_level)
+            db.flush()
         
         existing_q = db.query(Question).filter(
             Question.question_text == q_data["question_text"]
         ).first()
 
-        if not existing_q:
+        if existing_q:
+            # Earlier local/deployment seeds may have created the question
+            # before these taxonomy relations existed. Backfill only missing
+            # links; never overwrite candidate/editor-owned question content.
+            if existing_q.subject_id is None:
+                existing_q.subject_id = subject.id
+            if existing_q.topic_id is None:
+                existing_q.topic_id = topic.id
+            if existing_q.interview_round_id is None:
+                existing_q.interview_round_id = interview_round.id
+            if existing_q.experience_level_id is None:
+                existing_q.experience_level_id = experience_level.id
+        else:
             new_q = Question(
                 question_text=q_data["question_text"],
                 question_type=q_data["question_type"],
                 industry_id=ind.id,
                 job_role_id=role.id if role else None,
+                subject_id=subject.id,
+                topic_id=topic.id,
+                interview_round_id=interview_round.id,
+                experience_level_id=experience_level.id if experience_level else None,
                 subject=q_data["subject"],
                 topic=q_data["topic"],
                 difficulty=q_data["difficulty"],
@@ -618,7 +667,17 @@ def seed_database(db: Session):
             db.add(mod)
             db.flush()
 
-            for l_data in m_data.get("lessons", []):
+        else:
+            mod = existing_m
+
+        # Add missing baseline lessons to a partially seeded module, while
+        # leaving all existing lesson content untouched.
+        for l_data in m_data.get("lessons", []):
+            existing_lesson = db.query(Lesson).filter(
+                Lesson.module_id == mod.id,
+                Lesson.title == l_data["title"],
+            ).first()
+            if existing_lesson is None:
                 db.add(Lesson(
                     module_id=mod.id,
                     title=l_data["title"],

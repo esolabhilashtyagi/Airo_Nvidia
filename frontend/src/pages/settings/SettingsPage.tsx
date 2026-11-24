@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
 import { RequiredLabel } from '../../components/common/RequiredMark';
@@ -38,7 +39,7 @@ export function SettingsPage() {
       <header>
         <p className="text-sm font-semibold text-violet-700">Account</p>
         <h1 className="mt-1 text-3xl font-bold text-slate-900">Settings</h1>
-        <p className="mt-2 text-sm text-slate-600">Manage your sign-in security and account details.</p>
+        <p className="mt-2 text-sm text-slate-600">Manage your account details and sign-in security.</p>
       </header>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -51,7 +52,7 @@ export function SettingsPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Change password</h2>
-        <p className="mt-1 text-sm text-slate-600">Changing your password signs you out of this session. Sign in again with the new password.</p>
+        <p className="mt-1 text-sm text-slate-600">Use this while signed in and you know your current password. You’ll be signed out after the change.</p>
         {error && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
         <form className="mt-4 space-y-4" onSubmit={(event) => void changePassword(event)}>
           <label className="block text-sm font-medium text-slate-700"><RequiredLabel>Current password</RequiredLabel>
@@ -67,6 +68,7 @@ export function SettingsPage() {
             {saving ? 'Updating…' : 'Update password'}
           </button>
         </form>
+        <p className="mt-4 text-sm text-slate-600">Can’t sign in or don’t know your current password? <Link to="/forgot-password" className="font-semibold text-violet-700 hover:underline">Request reset instructions</Link>.</p>
       </section>
     </div>
   );

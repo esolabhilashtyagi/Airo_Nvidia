@@ -48,6 +48,41 @@ from app.services.resume_ats import calculate_ats_match
 logger = logging.getLogger("aairo.resumes")
 
 
+def _provider_auth_failure_message(provider_name: str, status_code: int, model_name: str) -> str:
+    if provider_name == "Google Gemini" and status_code in {401, 403}:
+        return (
+            f"Gemini rejected the configured credentials or model access (HTTP {status_code}). "
+            "Check GEMINI_API_KEY and GEMINI_MODEL in the backend environment, then restart the backend."
+        )
+    if provider_name == "NVIDIA Nemotron" and status_code == 401:
+        return (
+            "NVIDIA rejected the API key (HTTP 401). Replace NVIDIA_API_KEY in the Render "
+            "backend environment with a valid NVIDIA API Catalog key, then save and redeploy."
+        )
+    if provider_name == "NVIDIA Nemotron" and status_code == 403:
+        return (
+            f"NVIDIA denied access to model {model_name} (HTTP 403). Check that this NVIDIA "
+            "API key has access to the model, then save and redeploy."
+        )
+    return (
+        f"{provider_name} rejected the configured credentials (HTTP {status_code}). "
+        "Check the provider key and model access, then restart the backend."
+    )
+
+
+def _analysis_error_for_current_provider(error: Optional[str]) -> Optional[str]:
+    """Avoid presenting a persisted error from a provider no longer in use."""
+    if (
+        error
+        and re.search(r"nvidia|nemotron", error, re.IGNORECASE)
+    ):
+        return (
+            "The previous analysis attempt failed with an earlier AI configuration. "
+            "Select Analyze resume to retry with the currently configured provider and generate fresh results."
+        )
+    return error
+
+
 class ScoreCategories(BaseModel):
     model_config = ConfigDict(extra="forbid")
     completeness: float = Field(ge=0, le=100)
@@ -645,8 +680,10 @@ class ResumeService:
         if not resume:
             raise HTTPException(status_code=404, detail="Resume not found.")
         latest = max(resume.analyses, key=lambda analysis: analysis.created_at, default=None)
+        resume_data = ResumeResponse.model_validate(resume).model_dump()
+        resume_data["analysis_error"] = _analysis_error_for_current_provider(resume.analysis_error)
         response = ResumeDetailResponse.model_validate({
-            **ResumeResponse.model_validate(resume).model_dump(),
+            **resume_data,
             "raw_text": resume.raw_text,
             "latest_analysis": latest,
             "versions": sorted(resume.versions, key=lambda version: version.version_number),
@@ -664,6 +701,7 @@ class ResumeService:
         output = []
         for resume in resumes:
             response = ResumeResponse.model_validate(resume)
+            response.analysis_error = _analysis_error_for_current_provider(resume.analysis_error)
             latest = max(resume.analyses, key=lambda analysis: analysis.created_at, default=None)
             if latest:
                 response.latest_analysis = ResumeAnalysisResponse.model_validate(latest)
@@ -837,7 +875,7 @@ class ResumeService:
             if status_code == 404:
                 resume.analysis_error = f"{provider_name} could not find the configured model ({model_name}). Check the model ID and endpoint, then retry."
             elif status_code in (401, 403):
-                resume.analysis_error = f"{provider_name} rejected the configured credentials. Verify that the server process has a valid key with access to this model, then restart it."
+                resume.analysis_error = _provider_auth_failure_message(provider_name, status_code, model_name)
             elif status_code == 429:
                 resume.analysis_error = f"{provider_name} rate or quota limit was reached. Wait before retrying."
             elif status_code == 400:

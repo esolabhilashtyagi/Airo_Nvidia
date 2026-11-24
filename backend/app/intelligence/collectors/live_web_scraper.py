@@ -436,7 +436,7 @@ class LiveWebScraper:
             net_tasks.append(fetch_open_web())
         if any(p.lower() in ["leetcode", "leetcode discuss"] for p in platforms_target) and role_attrs.get("is_tech"):
             net_tasks.append(fetch_leetcode())
-        if any(p.lower() in ["geeksforgeeks", "gfg"] for p in platforms_target):
+        if any(p.lower() in ["geeksforgeeks", "gfg"] for p in platforms_target) and role_attrs.get("is_tech"):
             net_tasks.append(fetch_gfg())
         if any(p.lower() in ["reddit", "reddit & community"] for p in platforms_target):
             net_tasks.append(fetch_reddit())

@@ -4,8 +4,11 @@ from pathlib import Path
 
 import pytest
 
+import sys
+
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-PYTHON = BACKEND_DIR / "venv" / "bin" / "python"
+_venv_py = BACKEND_DIR / "venv" / "bin" / "python"
+PYTHON = _venv_py if _venv_py.exists() else Path(sys.executable)
 
 
 def test_pytest_database_resolver_rejects_non_test_name_without_leaking_password():
@@ -34,8 +37,9 @@ def test_pytest_session_guard_aborts_non_test_target_before_connecting():
     env = os.environ.copy()
     env.update({
         "DATABASE_URL": "postgresql+asyncpg://dbuser:secret@127.0.0.1:1/aairo_development",
-        "DATABASE_URL_SYNC": "postgresql://dbuser:secret@127.0.0.1:1/aairo_development",
+        "DATABASE_URL_SYNC": "postgresql+psycopg2://dbuser:secret@127.0.0.1:1/aairo_development",
         "GEMINI_API_KEY": "",
+        "DISABLE_SQLALCHEMY_CEXT": "1",
     })
     env.pop("TEST_DB_ALLOWED", None)
 
@@ -55,8 +59,9 @@ def test_seed_entrypoint_refuses_without_allowlist_before_connecting():
     env = os.environ.copy()
     env.update({
         "DATABASE_URL": "postgresql+asyncpg://dbuser:secret@127.0.0.1:1/seed_guard_test",
-        "DATABASE_URL_SYNC": "postgresql://dbuser:secret@127.0.0.1:1/seed_guard_test",
+        "DATABASE_URL_SYNC": "postgresql+psycopg2://dbuser:secret@127.0.0.1:1/seed_guard_test",
         "ENVIRONMENT": "development",
+        "DISABLE_SQLALCHEMY_CEXT": "1",
     })
     env.pop("SEED_ALLOWED_DB", None)
 
@@ -80,4 +85,25 @@ def test_seed_entrypoint_refuses_production_even_with_allowlist():
             "postgresql://dbuser:secret@localhost:5432/aairo_phase4_pytest",
             allowed_database="aairo_phase4_pytest",
             environment="production",
+        )
+
+
+def test_public_content_bootstrap_requires_exact_production_database_allowlist():
+    from app.core.database_guards import validate_public_content_bootstrap_target
+
+    url = "postgresql+asyncpg://dbuser:secret@localhost:5432/aairo_prod"
+    assert validate_public_content_bootstrap_target(
+        url, allowed_database="aairo_prod", environment="production"
+    ) == "aairo_prod"
+    with pytest.raises(RuntimeError, match="PUBLIC_CONTENT_BOOTSTRAP_ALLOWED_DB"):
+        validate_public_content_bootstrap_target(
+            url, allowed_database=None, environment="production"
+        )
+    with pytest.raises(RuntimeError, match="does not match"):
+        validate_public_content_bootstrap_target(
+            url, allowed_database="another_database", environment="production"
+        )
+    with pytest.raises(RuntimeError, match="reserved for production"):
+        validate_public_content_bootstrap_target(
+            url, allowed_database="aairo_prod", environment="development"
         )

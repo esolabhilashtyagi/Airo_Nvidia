@@ -9,7 +9,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && python -m app.core.bootstrap_public_content && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -26,6 +26,9 @@ services:
           property: connectionString
       - key: ALEMBIC_ALLOWED_DB
         # Must exactly match the managed PostgreSQL databaseName below.
+        value: aairo_db
+      - key: PUBLIC_CONTENT_BOOTSTRAP_ALLOWED_DB
+        # Exact allowlist for idempotent baseline taxonomy, learning content, and question bank.
         value: aairo_db
       - key: AI_PROVIDER
         value: nvidia

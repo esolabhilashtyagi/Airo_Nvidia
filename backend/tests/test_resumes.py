@@ -6,7 +6,10 @@ import pytest
 from docx import Document
 from httpx import AsyncClient
 from PIL import Image, ImageDraw, ImageFont
-import fitz
+try:
+    import fitz
+except (ImportError, Exception):
+    fitz = None
 
 from app.core.config import settings
 
@@ -123,13 +126,21 @@ async def test_profile_generated_resume_download_uses_only_authenticated_profile
         json={"step": 5, "key_skills": ["Payroll", "Employee Relations"]},
     )
     assert updated.status_code == 200, updated.text
-    response = await async_client.post("/api/v1/resumes/generate-from-profile", headers=owner)
+    response = await async_client.post("/api/v1/resumes/generate-from-profile?format=docx", headers=owner)
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     assert "attachment; filename=" in response.headers["content-disposition"]
     content = "\n".join(paragraph.text for paragraph in Document(io.BytesIO(response.content)).paragraphs)
     assert "Payroll" in content and "Employee Relations" in content
-    other_response = await async_client.post("/api/v1/resumes/generate-from-profile", headers=other)
+    if fitz is not None:
+        pdf_response = await async_client.post("/api/v1/resumes/generate-from-profile?template=classic", headers=owner)
+        assert pdf_response.status_code == 200, pdf_response.text
+        assert pdf_response.headers["content-type"].startswith("application/pdf")
+        assert pdf_response.headers["content-disposition"].endswith("classic_resume.pdf\"")
+        pdf_document = fitz.open(stream=pdf_response.content, filetype="pdf")
+        assert "Payroll" in "\n".join(page.get_text() for page in pdf_document)
+        pdf_document.close()
+    other_response = await async_client.post("/api/v1/resumes/generate-from-profile?format=docx", headers=other)
     assert other_response.status_code == 422
 
 

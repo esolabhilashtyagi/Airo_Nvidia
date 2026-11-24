@@ -8,6 +8,7 @@ import { RegisterPage } from './pages/auth/RegisterPage';
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
 import { LoadingSpinner } from './components/common/LoadingSpinner';
+import { RouteErrorBoundary } from './components/common/RouteErrorBoundary';
 
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage })));
 const OnboardingWizard = lazy(() => import('./pages/onboarding/OnboardingWizard').then((module) => ({ default: module.OnboardingWizard })));
@@ -40,40 +41,42 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><LoadingSpinner size="lg" message="Loading your workspace..." /></div>}>
-        <Routes>
-          <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-          </Route>
-          <Route element={<DashboardLayout />}>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/onboarding" element={<OnboardingWizard />} />
-            <Route path="/profile" element={<OnboardingWizard />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/resume" element={<ResumeLibraryPage />} />
-            <Route path="/resume/:resumeId" element={<ResumeDetailPage />} />
-            <Route path="/resume/:resumeId/analysis" element={<ResumeDetailPage />} />
-            <Route path="/resume/:resumeId/enhancement" element={<ResumeDetailPage />} />
-            <Route path="/resume/:resumeId/versions" element={<ResumeDetailPage />} />
-            <Route path="/question-bank" element={<QuestionBankPage />} />
-            <Route path="/modules" element={<ModulesPage />} />
-            <Route path="/admin/questions" element={<QuestionManagementPage />} />
-            <Route path="/coach" element={<CoachPage />} />
-            <Route path="/roadmap" element={<CoachPage />} />
-            <Route path="/testing" element={<TestingPage />} />
-            <Route path="/interviews" element={<InterviewPage />} />
-            <Route path="/admin" element={<AdminConsolePage />} />
-            <Route path="/admin/modules" element={<ModuleManagementPage />} />
-            <Route path="/admin/question-taxonomy" element={<QuestionTaxonomyPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-          </Route>
-          <Route path="*" element={<UnavailablePage />} />
-        </Routes>
-        </Suspense>
+        <RouteErrorBoundary>
+          <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><LoadingSpinner size="lg" message="Loading your workspace..." /></div>}>
+            <Routes>
+              <Route element={<AuthLayout />}>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+              </Route>
+              <Route element={<DashboardLayout />}>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/onboarding" element={<OnboardingWizard />} />
+                <Route path="/profile" element={<OnboardingWizard />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/resume" element={<ResumeLibraryPage />} />
+                <Route path="/resume/:resumeId" element={<ResumeDetailPage />} />
+                <Route path="/resume/:resumeId/analysis" element={<ResumeDetailPage />} />
+                <Route path="/resume/:resumeId/enhancement" element={<ResumeDetailPage />} />
+                <Route path="/resume/:resumeId/versions" element={<ResumeDetailPage />} />
+                <Route path="/question-bank" element={<QuestionBankPage />} />
+                <Route path="/modules" element={<ModulesPage />} />
+                <Route path="/admin/questions" element={<QuestionManagementPage />} />
+                <Route path="/coach" element={<CoachPage />} />
+                <Route path="/roadmap" element={<CoachPage />} />
+                <Route path="/testing" element={<TestingPage />} />
+                <Route path="/interviews" element={<InterviewPage />} />
+                <Route path="/admin" element={<AdminConsolePage />} />
+                <Route path="/admin/modules" element={<ModuleManagementPage />} />
+                <Route path="/admin/question-taxonomy" element={<QuestionTaxonomyPage />} />
+                <Route path="/reports" element={<ReportsPage />} />
+              </Route>
+              <Route path="*" element={<UnavailablePage />} />
+            </Routes>
+          </Suspense>
+        </RouteErrorBoundary>
       </AuthProvider>
     </BrowserRouter>
   );

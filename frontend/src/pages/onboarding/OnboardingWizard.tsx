@@ -40,6 +40,9 @@ export const OnboardingWizard: React.FC = () => {
   const [targetCompanies, setTargetCompanies] = useState<{ company_name: string; target_role: string }[]>([]);
   const [companySearch, setCompanySearch] = useState('');
   const [companyMatches, setCompanyMatches] = useState<{ id: string; name: string }[]>([]);
+  const [isSearchingCompanies, setIsSearchingCompanies] = useState(false);
+  const [companySearchError, setCompanySearchError] = useState<string | null>(null);
+  const [companySearchAttempt, setCompanySearchAttempt] = useState(0);
   const [companyRoleInput, setCompanyRoleInput] = useState('');
   const [interactionPreference, setInteractionPreference] = useState<'text' | 'voice'>('text');
   const profileInitialized = useRef(false);
@@ -76,7 +79,9 @@ export const OnboardingWizard: React.FC = () => {
           if (profile.industry_id) setSelectedIndustryId(profile.industry_id);
           if (profile.current_company) setCurrentCompany(profile.current_company);
           if (profile.current_role) setCurrentRole(profile.current_role);
-          if (profile.target_role) setTargetRole(profile.target_role);
+          // Earlier onboarding builds saved this generic fallback for freshers.
+          // Treat it as unset so the candidate can enter their actual target role.
+          setTargetRole(profile.target_role?.trim().toLowerCase() === 'associate' ? '' : profile.target_role || '');
           if (profile.total_experience_months) setTotalExperienceMonths(profile.total_experience_months);
           if (profile.key_skills?.length > 0) setKeySkillsInput(profile.key_skills.join(', '));
           if (profile.interview_rounds_preferred?.length > 0) setSelectedRounds(profile.interview_rounds_preferred);
@@ -88,18 +93,42 @@ export const OnboardingWizard: React.FC = () => {
   }, [profile]);
 
   useEffect(() => {
-    if (!companySearch.trim()) { setCompanyMatches([]); return; }
+    const search = companySearch.trim();
+    let isCurrent = true;
+    if (!search) {
+      setCompanyMatches([]);
+      setCompanySearchError(null);
+      setIsSearchingCompanies(false);
+      return;
+    }
+
+    setCompanyMatches([]);
+    setCompanySearchError(null);
+    setIsSearchingCompanies(true);
     const timer = window.setTimeout(() => {
-      companiesApi.search(companySearch).then(setCompanyMatches).catch(() => setCompanyMatches([]));
-    }, 200);
-    return () => window.clearTimeout(timer);
-  }, [companySearch]);
+      companiesApi.search(search).then((results) => {
+        if (isCurrent) setCompanyMatches(results.filter((company) => company?.id && company?.name));
+      }).catch((err: Error) => {
+        if (isCurrent) setCompanySearchError(err.message || 'Company suggestions could not be loaded.');
+      }).finally(() => {
+        if (isCurrent) setIsSearchingCompanies(false);
+      });
+    }, 250);
+    return () => {
+      isCurrent = false;
+      window.clearTimeout(timer);
+    };
+  }, [companySearch, companySearchAttempt]);
 
   const handleNext = async () => {
     if (currentStep === 2 && !selectedIndustryId) {
       setError(industries.length === 0
         ? 'No active industries are available right now. Retry loading the options before continuing.'
         : 'Select an industry before continuing.');
+      return;
+    }
+    if (currentStep === 4 && !targetRole.trim()) {
+      setError('Enter the specific job role you are targeting before continuing.');
       return;
     }
     const incompleteExperience = experienceList.some((entry) => {
@@ -122,7 +151,7 @@ export const OnboardingWizard: React.FC = () => {
       industry_id: selectedIndustryId || null,
       current_company: candidateType === 'working_professional' ? currentCompany.trim() : '',
       current_role: candidateType === 'working_professional' ? currentRole.trim() : '',
-      target_role: targetRole || (candidateType === 'working_professional' ? currentRole : 'Associate'),
+      target_role: targetRole.trim() || null,
       total_experience_months: candidateType === 'working_professional' ? totalExperienceMonths : 0,
       education: educationList.filter((education) => Boolean(education.degree.trim() || education.field_of_study.trim() || education.institution.trim())),
       experience: experienceList.filter((entry) => Boolean(entry.company_name.trim() || entry.job_title.trim() || entry.description?.trim())),
@@ -534,8 +563,13 @@ export const OnboardingWizard: React.FC = () => {
             <div className="space-y-3">
               <label className="block text-xs font-medium text-slate-700" htmlFor="company-search">Search or add a company</label>
               <input id="company-search" type="text" value={companySearch} onChange={(e) => setCompanySearch(e.target.value)} placeholder="Type an organization name" className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm" />
+              {isSearchingCompanies && <p role="status" className="text-xs text-slate-500">Searching saved companies…</p>}
+              {companySearchError && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                <span>Company suggestions failed to load: {companySearchError}</span>
+                <button type="button" onClick={() => setCompanySearchAttempt((attempt) => attempt + 1)} className="shrink-0 font-semibold underline">Retry</button>
+              </div>}
               {companyMatches.length > 0 && <div className="rounded-lg border border-slate-200 divide-y divide-slate-100">{companyMatches.map((company) => <button key={company.id} type="button" onClick={() => addTargetCompany(company.name)} className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50">{company.name}</button>)}</div>}
-              {companySearch.trim() && !companyMatches.some((company) => company.name.toLowerCase() === companySearch.trim().toLowerCase()) && <button type="button" onClick={() => addTargetCompany(companySearch)} className="text-xs font-semibold text-violet-700 hover:underline">Add “{companySearch.trim()}” as a new company</button>}
+              {companySearch.trim() && !isSearchingCompanies && !companySearchError && !companyMatches.some((company) => company.name.toLowerCase() === companySearch.trim().toLowerCase()) && <button type="button" onClick={() => addTargetCompany(companySearch)} className="text-xs font-semibold text-violet-700 hover:underline">Add “{companySearch.trim()}” as a new company</button>}
               <label className="block text-xs font-medium text-slate-700" htmlFor="company-target-role">Target role for the next company</label>
               <input id="company-target-role" type="text" value={companyRoleInput} onChange={(e) => setCompanyRoleInput(e.target.value)} placeholder={targetRole || 'Role at this company'} className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm" />
               <div className="space-y-2">{targetCompanies.map((company, index) => <div key={`${company.company_name}-${index}`} className="flex items-center gap-2 rounded-lg bg-slate-50 p-3">

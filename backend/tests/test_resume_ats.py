@@ -4,13 +4,49 @@ from app.integrations.ai.prompt_manager import PromptManager
 from app.schemas.resume import ResumeATSReviewRequest
 from pydantic import ValidationError
 from fastapi import HTTPException
-from app.services.resume_service import ResumeService
+from app.services.resume_service import (
+    ResumeService,
+    _analysis_error_for_current_provider,
+    _provider_auth_failure_message,
+)
 import pytest
 
 
 JOB = """Backend Engineer role. We seek Python and PostgreSQL experience, API design and REST API
 development, Docker, Git, and unit testing. Build reliable services with monitoring and CI/CD.
 Education and project delivery experience are valuable."""
+
+
+def test_nvidia_auth_errors_distinguish_invalid_key_from_model_access():
+    invalid_key = _provider_auth_failure_message("NVIDIA Nemotron", 401, "nvidia/example")
+    no_model_access = _provider_auth_failure_message("NVIDIA Nemotron", 403, "nvidia/example")
+
+    assert "NVIDIA_API_KEY" in invalid_key
+    assert "valid NVIDIA API Catalog key" in invalid_key
+    assert "nvidia/example" in no_model_access
+    assert "has access to the model" in no_model_access
+
+
+def test_gemini_auth_error_points_to_gemini_environment_settings():
+    message = _provider_auth_failure_message("Google Gemini", 401, "gemini-test-model")
+
+    assert "GEMINI_API_KEY" in message
+    assert "GEMINI_MODEL" in message
+
+
+def test_saved_nvidia_failure_is_replaced_with_current_provider_retry_guidance():
+    message = _analysis_error_for_current_provider(
+        "NVIDIA Nemotron rejected the configured credentials."
+    )
+
+    assert "currently configured provider" in message
+    assert "Analyze resume" in message
+    assert "NVIDIA" not in message
+
+
+def test_non_nvidia_analysis_messages_are_preserved():
+    message = "Google Gemini rate or quota limit was reached."
+    assert _analysis_error_for_current_provider(message) == message
 
 
 def test_ats_estimate_matches_job_terms_and_common_resume_sections():

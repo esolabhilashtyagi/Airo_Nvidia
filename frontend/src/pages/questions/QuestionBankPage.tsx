@@ -243,7 +243,7 @@ export function QuestionBankPage() {
       const countSources = res.scraped_sources_count ?? 4;
       const dbStatus = countStored > 0
         ? `saved ${countStored} new records into database`
-        : `all ${countExtracted} questions verified & synced in database`;
+        : (countExtracted > 0 ? `all ${countExtracted} questions verified & synced in database (deduplicated)` : 'no new questions found');
       setScrapeSuccessMsg(
         `✅ Live Scrape Complete: Scraped ${countSources} web sources, extracted ${countExtracted} authentic questions for ${selectedCompany} (${effectiveRole}, ${targetYoE} yrs YoE) and ${dbStatus}!`
       );

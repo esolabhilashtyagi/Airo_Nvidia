@@ -25,7 +25,7 @@ from app.schemas.resume import (
     SuggestionActionRequest,
 )
 from app.services.resume_service import ResumeService
-from app.services.resume_builder import build_profile_resume_docx, safe_resume_filename
+from app.services.resume_builder import build_profile_resume_docx, build_profile_resume_pdf, safe_resume_filename
 
 router = APIRouter(prefix="/resumes", tags=["Resume Intelligence"])
 
@@ -66,10 +66,11 @@ async def list_resumes(
 @router.post("/generate-from-profile", response_class=StreamingResponse)
 async def generate_resume_from_profile(
     template: str = Query(default="modern", pattern="^(modern|classic|compact)$"),
+    file_format: str = Query(default="pdf", alias="format", pattern="^(pdf|docx)$"),
     candidate_profile: CandidateProfile = Depends(get_current_candidate_profile),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Download a DOCX assembled solely from this candidate's saved profile."""
+    """Download a PDF or editable DOCX assembled solely from the candidate's saved profile."""
     result = await db.execute(
         select(CandidateProfile)
         .where(CandidateProfile.id == candidate_profile.id)
@@ -83,13 +84,15 @@ async def generate_resume_from_profile(
     if not profile or not profile.user:
         raise HTTPException(status_code=404, detail="Candidate profile was not found.")
     try:
-        content = await run_in_threadpool(build_profile_resume_docx, profile.user, profile, template)
+        builder = build_profile_resume_pdf if file_format == "pdf" else build_profile_resume_docx
+        content = await run_in_threadpool(builder, profile.user, profile, template)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    filename = safe_resume_filename(profile.user.full_name, template)
+    filename = safe_resume_filename(profile.user.full_name, template, file_format)
+    media_type = "application/pdf" if file_format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return StreamingResponse(
         iter([content]),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

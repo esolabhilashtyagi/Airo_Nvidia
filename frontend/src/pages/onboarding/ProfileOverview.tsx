@@ -7,6 +7,7 @@ import { resumesApi } from '../../api/resumes';
 import type { CandidateProfile } from '../../types';
 
 type ResumeTemplate = 'modern' | 'classic' | 'compact';
+type ResumeFormat = 'pdf' | 'docx';
 const resumeTemplates: { id: ResumeTemplate; name: string; description: string; accent: string; }[] = [
   { id: 'modern', name: 'Modern', description: 'Clean, contemporary hierarchy with a violet accent.', accent: 'bg-violet-600' },
   { id: 'classic', name: 'Classic', description: 'Traditional centered heading and formal typography.', accent: 'bg-slate-500' },
@@ -40,13 +41,14 @@ export function ProfileOverview({ profile, onEdit }: { profile: CandidateProfile
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [resumeTemplate, setResumeTemplate] = useState<ResumeTemplate>('modern');
+  const [resumeFormat, setResumeFormat] = useState<ResumeFormat>('pdf');
   const isGraduate = profile.candidate_type === 'student_fresher';
 
   async function downloadResume() {
     setGenerating(true);
     setError('');
     try {
-      const { blob, filename } = await resumesApi.generateFromProfile(resumeTemplate);
+      const { blob, filename } = await resumesApi.generateFromProfile(resumeTemplate, resumeFormat);
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
@@ -74,7 +76,7 @@ export function ProfileOverview({ profile, onEdit }: { profile: CandidateProfile
           <PencilLine className="h-4 w-4" /> Edit profile
         </button>
         <button type="button" onClick={() => void downloadResume()} disabled={generating} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-violet-900/15 transition hover:bg-violet-800 disabled:cursor-wait disabled:opacity-60">
-          <ArrowDownToLine className="h-4 w-4" /> {generating ? 'Preparing resume…' : 'Generate resume'}
+          <ArrowDownToLine className="h-4 w-4" /> {generating ? 'Preparing resume…' : `Download ${resumeFormat.toUpperCase()}`}
         </button>
       </div>
     </header>
@@ -82,7 +84,7 @@ export function ProfileOverview({ profile, onEdit }: { profile: CandidateProfile
     {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
 
     <section aria-labelledby="resume-template-heading" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="resume-template-heading" className="font-semibold text-slate-900">Choose a resume style</h2><p className="mt-1 text-sm text-slate-500">Select a professional layout. Your DOCX uses only details saved in this profile.</p></div><span className="mt-1 text-xs text-slate-500">Download format: DOCX</span></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="resume-template-heading" className="font-semibold text-slate-900">Choose a resume style</h2><p className="mt-1 text-sm text-slate-500">ATS-friendly, single-column layouts built only from details saved in your profile.</p></div><label className="text-sm font-medium text-slate-700">Download format<select aria-label="Resume download format" value={resumeFormat} onChange={(event) => setResumeFormat(event.target.value as ResumeFormat)} className="mt-1 block rounded-lg border border-slate-300 bg-white px-3 py-2"><option value="pdf">PDF</option><option value="docx">Editable DOCX</option></select></label></div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">{resumeTemplates.map((template) => <button key={template.id} type="button" aria-pressed={resumeTemplate === template.id} onClick={() => setResumeTemplate(template.id)} className={`group rounded-xl border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-violet-300 ${resumeTemplate === template.id ? 'border-violet-500 bg-violet-50/50 shadow-sm' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
         <div aria-hidden="true" className="flex h-24 gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-inner"><span className={`w-1.5 shrink-0 rounded-full ${template.accent}`} /><div className={`flex-1 ${template.id === 'classic' ? 'text-center' : ''}`}><span className={`block h-2 w-2/3 rounded ${template.accent} ${template.id === 'classic' ? 'mx-auto' : ''}`} /><span className={`mt-2 block h-1 w-1/2 rounded bg-slate-300 ${template.id === 'classic' ? 'mx-auto' : ''}`} /><span className="mt-3 block h-1 w-full rounded bg-slate-200" /><span className="mt-1.5 block h-1 w-5/6 rounded bg-slate-200" /><span className="mt-2 block h-1 w-1/3 rounded bg-slate-300" /></div></div>
         <span className="mt-3 flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-900">{template.name}</span><span className={`h-4 w-4 rounded-full border ${resumeTemplate === template.id ? 'border-violet-600 bg-violet-600 ring-2 ring-violet-100' : 'border-slate-300 bg-white'}`} /></span><span className="mt-1 block text-xs leading-5 text-slate-500">{template.description}</span>

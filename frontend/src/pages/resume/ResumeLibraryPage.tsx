@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, UploadCloud, RefreshCw, ArrowUpRight, CircleAlert } from 'lucide-react';
+import { FileText, RefreshCw, ArrowUpRight, CircleAlert, Upload } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { resumesApi } from '../../api/resumes';
 import { EmptyState } from '../../components/common/EmptyState';
@@ -21,7 +21,6 @@ export function ResumeLibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -73,44 +72,35 @@ export function ResumeLibraryPage() {
           <h1 className="mt-1 text-2xl font-bold text-slate-900">My resumes</h1>
           <p className="mt-1 text-sm text-slate-500">Upload a resume to extract its contents and request role-aware feedback.</p>
         </div>
-        <button type="button" onClick={() => void loadResumes()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-60">
+            <Upload className="h-4 w-4" /> {resumes.length ? 'Upload another resume' : 'Choose a resume'}
+          </button>
+          <button type="button" onClick={() => void loadResumes()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </button>
+        </div>
       </div>
 
       {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
 
-      <input ref={inputRef} type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" className="hidden" onChange={(event) => void uploadFile(event.target.files?.[0])} />
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          const file = event.dataTransfer.files.item(0)
-            ?? Array.from(event.dataTransfer.items).find((item) => item.kind === 'file')?.getAsFile();
-          if (!file) { setError('The dropped item did not include a readable file. Choose the file with the upload control.'); return; }
-          void uploadFile(file);
-        }}
-        disabled={uploading}
-        className={`w-full rounded-xl border-2 border-dashed p-6 text-left transition ${dragging ? 'border-violet-500 bg-violet-50' : 'border-slate-300 bg-white hover:border-violet-400 hover:bg-violet-50/30'} disabled:cursor-wait`}
-      >
-        <span className="flex items-center gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-500"><UploadCloud className="h-6 w-6" /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-slate-900"><RequiredLabel>Resume file</RequiredLabel> · {uploading ? `Uploading resume (${progress}%)` : 'Drop a resume here or browse files'}</span>
-            <span className="mt-1 block text-xs text-slate-500">PDF, DOCX, PNG, JPG, or JPEG · up to 15 MB · file contents are checked on upload</span>
-            {uploading && <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full bg-violet-600 transition-all" style={{ width: `${progress}%` }} /></span>}
-          </span>
-        </span>
-      </button>
-
+      <label htmlFor="resume-file" className="sr-only"><RequiredLabel>Resume file</RequiredLabel></label>
+      <input id="resume-file" ref={inputRef} type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" className="hidden" onChange={(event) => void uploadFile(event.target.files?.[0])} />
+      {uploading && <div role="status" aria-live="polite" className="rounded-xl border border-violet-200 bg-white p-4">
+        <div className="flex items-center justify-between gap-3 text-sm"><span className="font-medium text-slate-800">Uploading and processing your resume</span><span className="tabular-nums text-violet-800">{progress}%</span></div>
+        <div role="progressbar" aria-label="Resume upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-600 transition-[width] duration-200" style={{ width: `${progress}%` }} /></div>
+      </div>}
       <section aria-labelledby="resume-list-title" className="space-y-3">
         <h2 id="resume-list-title" className="text-base font-semibold text-slate-900">Resume history</h2>
         {loading ? <LoadingSpinner message="Loading your resume library..." /> : resumes.length === 0 ? (
-          <EmptyState icon={FileText} iconClassName="!bg-gray-100 !text-gray-500" title="No resumes uploaded yet" description="Upload a PDF, DOCX, or image to begin. Extracted text will remain available if AI analysis is not configured." actionText="Choose a resume" onActionClick={() => inputRef.current?.click()} />
+          <div>
+            <EmptyState
+              icon={FileText}
+              iconClassName="!bg-gray-100 !text-gray-500"
+              title={uploading ? `Uploading resume (${progress}%)` : 'No resumes uploaded yet'}
+              description={uploading ? 'Your resume is being checked and processed.' : 'Upload a PDF, DOCX, or image to begin. Extracted text will remain available if AI analysis is not configured.'}
+            />
+          </div>
         ) : resumes.map((resume) => (
           <article key={resume.id} className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600"><FileText className="h-5 w-5" /></div>

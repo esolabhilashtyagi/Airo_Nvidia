@@ -2,9 +2,9 @@ import { API_BASE, ApiError, apiClient } from './client';
 import type { Resume, ResumeAnalysis, ResumeATSReview, ResumeDetail, ResumeParsedData, ResumeSuggestion, ResumeVersion } from '../types';
 
 export const resumesApi = {
-  generateFromProfile: async (template: 'modern' | 'classic' | 'compact' = 'modern') => {
+  generateFromProfile: async (template: 'modern' | 'classic' | 'compact' = 'modern', format: 'pdf' | 'docx' = 'pdf') => {
     const token = localStorage.getItem('aairo_access_token');
-    const response = await fetch(`${API_BASE}/resumes/generate-from-profile?template=${template}`, {
+    const response = await fetch(`${API_BASE}/resumes/generate-from-profile?template=${template}&format=${format}`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
@@ -14,7 +14,7 @@ export const resumesApi = {
       const message = typeof detail === 'string' ? detail : 'Your profile resume could not be generated.';
       throw new ApiError(message, body?.error?.code || 'RESUME_GENERATION_FAILED');
     }
-    const filename = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1] || 'aairo-resume.docx';
+    const filename = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1] || `aairo-resume.${format}`;
     return { blob: await response.blob(), filename };
   },
 
@@ -27,7 +27,9 @@ export const resumesApi = {
       const token = localStorage.getItem('aairo_access_token');
       if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
       request.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+        // Reserve 100% for the server's successful response, which includes
+        // validation and text extraction after the bytes have been sent.
+        if (event.lengthComputable) onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)));
       });
       request.addEventListener('load', () => {
         let body: any = null;

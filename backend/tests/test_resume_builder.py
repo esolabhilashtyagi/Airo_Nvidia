@@ -2,9 +2,13 @@ import io
 from types import SimpleNamespace
 
 import pytest
+try:
+    import fitz
+except (ImportError, Exception):
+    fitz = None
 from docx import Document
 
-from app.services.resume_builder import build_profile_resume_docx, safe_resume_filename
+from app.services.resume_builder import build_profile_resume_docx, build_profile_resume_pdf, safe_resume_filename
 
 
 def test_profile_resume_contains_only_saved_candidate_fields():
@@ -72,6 +76,40 @@ def test_profile_resume_does_not_invent_a_professional_summary():
 
 def test_resume_filename_is_safe_for_download_header():
     assert safe_resume_filename('Riley Morgan / "QA"') == "Riley_Morgan_QA_modern_resume.docx"
+    assert safe_resume_filename("Riley Morgan", "classic", "pdf") == "Riley_Morgan_classic_resume.pdf"
+
+
+@pytest.mark.skipif(fitz is None, reason="PyMuPDF runtime unavailable in local environment")
+@pytest.mark.parametrize("template", ["modern", "classic", "compact"])
+def test_profile_resume_pdf_is_valid_and_uses_only_saved_candidate_fields(template):
+    user = SimpleNamespace(full_name="Riley Morgan", email="riley@example.com")
+    profile = SimpleNamespace(
+        education_history=[SimpleNamespace(
+            degree="Bachelor of Arts", field_of_study="Psychology", institution="State University",
+            start_year=2018, end_year=2022, is_current=False, grade="Honors",
+        )],
+        experience_history=[SimpleNamespace(
+            job_title="Software Engineer", company_name="Example Labs", start_date="2022-01",
+            end_date=None, is_current=True, description="Built internal tools for the support team.",
+        )],
+        key_skills=["Python", "People analytics"],
+        career_goals="Transition into people operations using my technical background.",
+        target_role="HR Generalist", candidate_type="working_professional",
+    )
+
+    generated = build_profile_resume_pdf(user, profile, template)
+    document = fitz.open(stream=generated, filetype="pdf")
+    content = "\n".join(page.get_text() for page in document)
+
+    assert document.page_count >= 1
+    assert "Riley Morgan" in content
+    assert "riley@example.com" in content
+    assert "HR Generalist" in content
+    assert "Built internal tools for the support team." in content
+    assert "Psychology" in content and "State University" in content
+    assert "People analytics" in content
+    assert "improved revenue" not in content
+    document.close()
 
 
 @pytest.mark.parametrize("template", ["modern", "classic", "compact"])

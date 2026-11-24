@@ -34,7 +34,7 @@ describe('ProfileOverview', () => {
   });
 
   it('downloads a resume generated from the saved profile', async () => {
-    generateFromProfile.mockResolvedValue({ blob: new Blob(['docx']), filename: 'candidate-resume.docx' });
+    generateFromProfile.mockResolvedValue({ blob: new Blob(['pdf']), filename: 'candidate-resume.pdf' });
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:profile-resume');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
@@ -42,9 +42,23 @@ describe('ProfileOverview', () => {
     render(<ProfileOverview profile={graduateProfile} onEdit={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: /Classic/ }));
-    await user.click(screen.getByRole('button', { name: 'Generate resume' }));
+    await user.click(screen.getByRole('button', { name: 'Download PDF' }));
 
-    expect(generateFromProfile).toHaveBeenCalledWith('classic');
+    expect(generateFromProfile).toHaveBeenCalledWith('classic', 'pdf');
     expect(createObjectURL).toHaveBeenCalledOnce();
+  });
+
+  it('allows an editable DOCX export when selected', async () => {
+    generateFromProfile.mockResolvedValue({ blob: new Blob(['docx']), filename: 'candidate-resume.docx' });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:profile-resume');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    render(<ProfileOverview profile={graduateProfile} onEdit={vi.fn()} />);
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Resume download format' }), 'docx');
+    await user.click(screen.getByRole('button', { name: 'Download DOCX' }));
+
+    expect(generateFromProfile).toHaveBeenCalledWith('modern', 'docx');
   });
 });

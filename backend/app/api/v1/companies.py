@@ -18,8 +18,9 @@ async def search_companies(
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_async_db),
 ):
-    query = select(Company).order_by(Company.name.asc()).limit(limit)
-    if search.strip():
-        query = query.where(Company.name.ilike(f"%{search.strip()}%"))
+    query = select(Company).where(Company.is_active.is_(True)).order_by(Company.name.asc()).limit(limit)
+    normalized_search = search.strip()
+    if normalized_search:
+        query = query.where(Company.name.ilike(f"%{normalized_search}%"))
     result = await db.execute(query)
     return APIResponse(data=[CompanyResponse.model_validate(company) for company in result.scalars().all()])

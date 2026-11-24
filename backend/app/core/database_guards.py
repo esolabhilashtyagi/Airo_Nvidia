@@ -55,3 +55,47 @@ def validate_seed_target(
             f"Seed target {redacted_url} does not match SEED_ALLOWED_DB {allowed_database!r}; refusing to seed"
         )
     return url.database
+
+
+def validate_taxonomy_bootstrap_target(
+    database_url: str | URL,
+    allowed_database: str | None,
+    environment: str,
+) -> str:
+    """Allow only an explicitly allowlisted production taxonomy bootstrap."""
+    if environment.lower() != "production":
+        raise RuntimeError("Taxonomy bootstrap is reserved for production deployments")
+    if not allowed_database or not allowed_database.strip():
+        raise RuntimeError("TAXONOMY_BOOTSTRAP_ALLOWED_DB is required; refusing to bootstrap")
+
+    url = _parse_database_url(database_url)
+    if not url.database:
+        raise RuntimeError("Taxonomy bootstrap database URL has no database name")
+    if url.database != allowed_database:
+        raise RuntimeError(
+            f"Taxonomy bootstrap target {url.database!r} does not match "
+            f"TAXONOMY_BOOTSTRAP_ALLOWED_DB {allowed_database!r}; refusing to bootstrap"
+        )
+    return url.database
+
+
+def validate_public_content_bootstrap_target(
+    database_url: str | URL,
+    allowed_database: str | None,
+    environment: str,
+) -> str:
+    """Allow the idempotent published-content bootstrap only for an exact production DB allowlist."""
+    if environment.lower() != "production":
+        raise RuntimeError("Public content bootstrap is reserved for production deployments")
+    if not allowed_database or not allowed_database.strip():
+        raise RuntimeError("PUBLIC_CONTENT_BOOTSTRAP_ALLOWED_DB is required; refusing to bootstrap")
+
+    url = _parse_database_url(database_url)
+    if not url.database:
+        raise RuntimeError("Public content bootstrap database URL has no database name")
+    if url.database != allowed_database:
+        raise RuntimeError(
+            f"Public content bootstrap target {url.database!r} does not match "
+            "PUBLIC_CONTENT_BOOTSTRAP_ALLOWED_DB; refusing to bootstrap"
+        )
+    return url.database
