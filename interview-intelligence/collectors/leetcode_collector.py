@@ -4,9 +4,12 @@ Collects public interview questions and algorithmic challenges with constraints,
 test examples, and follow-up problem formulations.
 """
 
-from typing import List, Dict, Any
-from datetime import datetime
+import os
+import re
 import json
+import httpx
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 from .base_collector import BaseCollector
 from core.logging import logger
 
@@ -242,17 +245,119 @@ class LeetCodeCollector(BaseCollector):
             },
         ]
 
-    async def collect(self, limit: int = 25, use_mock: bool = False) -> List[Dict[str, Any]]:
-        samples = self._get_curated_problems()
-        results = [
-            {
-                "source_platform": "LeetCode",
-                "original_url": s["url"],
-                "title": s["title"],
-                "raw_text": s["text"],
-                "publication_date": s["date"],
-                "collected_at": datetime.utcnow().isoformat(),
-            }
-            for s in samples[:limit]
-        ]
+    async def fetch_live_topics(
+        self, limit: int = 25, skip: int = 0, category_slug: str = "interview-question"
+    ) -> List[Dict[str, Any]]:
+        """
+        Queries LeetCode's public GraphQL endpoint for live interview question discussion topics.
+        """
+        graphql_url = "https://leetcode.com/graphql"
+        query = (
+            "query questionTopicsList($orderBy: TopicSortingOption, $skip: Int, $first: Int, $categorySlug: String!) {\n"
+            "  questionTopicsList(orderBy: $orderBy, skip: $skip, first: $first, categorySlug: $categorySlug) {\n"
+            "    totalNum\n"
+            "    edges {\n"
+            "      node {\n"
+            "        id\n"
+            "        title\n"
+            "        slug\n"
+            "        post {\n"
+            "          id\n"
+            "          content\n"
+            "          creationDate\n"
+            "          author {\n"
+            "            username\n"
+            "          }\n"
+            "        }\n"
+            "      }\n"
+            "    }\n"
+            "  }\n"
+            "}"
+        )
+        payload = {
+            "operationName": "questionTopicsList",
+            "variables": {
+                "orderBy": "MOST_RECENT",
+                "skip": skip,
+                "first": min(limit, 50),
+                "categorySlug": category_slug,
+            },
+            "query": query,
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Content-Type": "application/json",
+            "Referer": "https://leetcode.com/discuss/interview-question",
+        }
+
+        results = []
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                resp = await client.post(graphql_url, json=payload, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    edges = (
+                        data.get("data", {})
+                        .get("questionTopicsList", {})
+                        .get("edges", [])
+                    )
+                    for edge in edges:
+                        node = edge.get("node", {})
+                        title = node.get("title", "").strip()
+                        post = node.get("post", {})
+                        raw_content = post.get("content", "").strip()
+                        topic_id = node.get("id")
+                        slug = node.get("slug", "")
+
+                        # Clean basic markdown/html formatting
+                        clean_content = re.sub(r"<[^>]+>", " ", raw_content)
+                        clean_content = re.sub(r"[\r\n]{3,}", "\n\n", clean_content).strip()
+
+                        if len(clean_content) >= 50:
+                            creation_ts = post.get("creationDate")
+                            pub_date = (
+                                datetime.utcfromtimestamp(creation_ts).isoformat()
+                                if creation_ts
+                                else datetime.utcnow().isoformat()
+                            )
+                            results.append({
+                                "source_platform": "LeetCode",
+                                "original_url": f"https://leetcode.com/discuss/interview-question/{topic_id}/{slug}".rstrip("/"),
+                                "title": title,
+                                "raw_text": f"Title: {title}\n\n{clean_content}",
+                                "publication_date": pub_date,
+                                "collected_at": datetime.utcnow().isoformat(),
+                            })
+        except Exception as e:
+            logger.info(f"LeetCode live GraphQL fetch skipped or timed out: {e}")
+
         return results
+
+    async def collect(
+        self, limit: int = 25, use_mock: bool = False, skip: int = 0
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+
+        # 1. Attempt live GraphQL query if not in mock mode
+        if not use_mock:
+            try:
+                live_items = await self.fetch_live_topics(limit=limit, skip=skip)
+                results.extend(live_items)
+            except Exception as e:
+                logger.info(f"LeetCode live collection fallback: {e}")
+
+        # 2. Backfill with curated problems if live items are below limit
+        if len(results) < limit:
+            samples = self._get_curated_problems()
+            needed = limit - len(results)
+            for s in samples[:needed]:
+                results.append({
+                    "source_platform": "LeetCode",
+                    "original_url": s["url"],
+                    "title": s["title"],
+                    "raw_text": s["text"],
+                    "publication_date": s["date"],
+                    "collected_at": datetime.utcnow().isoformat(),
+                })
+
+        return results[:limit]

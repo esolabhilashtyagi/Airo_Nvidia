@@ -87,3 +87,115 @@ class NemotronLocalClient:
         except Exception as e:
             logger.warning(f"Failed to parse Nemotron JSON output: {e}. Raw: {raw_text[:200]}")
             return None
+
+    async def generate_structural_followups(
+        self, base_question: str, company: str = "Technology Firm", role: str = "Software Engineer"
+    ) -> List[Dict[str, Any]]:
+        """
+        Synthesizes 2 structurally distinct follow-up questions from a base interview question.
+        Ensures strict structural differentiation (concurrency, distributed consensus, fault-tolerance)
+        rather than superficial combinatorial number-swapping.
+        Returns entries marked with source_type='ai_followup'.
+        """
+        schema = (
+            "[\n"
+            "  {\n"
+            "    \"variant_type\": \"Distributed Scale & Concurrency Variant\",\n"
+            "    \"question_text\": \"Full in-depth question with distributed or concurrency constraints\",\n"
+            "    \"category\": \"Distributed Systems\",\n"
+            "    \"difficulty\": \"Hard\",\n"
+            "    \"skills_tested\": [\"Distributed Systems\", \"Concurrency\"],\n"
+            "    \"source_type\": \"ai_followup\"\n"
+            "  },\n"
+            "  {\n"
+            "    \"variant_type\": \"Fault Tolerance & Boundary Resilience\",\n"
+            "    \"question_text\": \"Full in-depth question with failover or partition resilience constraints\",\n"
+            "    \"category\": \"System Design\",\n"
+            "    \"difficulty\": \"Hard\",\n"
+            "    \"skills_tested\": [\"Fault Tolerance\", \"Resilience\"],\n"
+            "    \"source_type\": \"ai_followup\"\n"
+            "  }\n"
+            "]"
+        )
+        task = (
+            f"Given the following base interview question asked at {company} for the role of {role}:\n\n"
+            f"Base Question: \"{base_question}\"\n\n"
+            "Generate exactly 2 structurally distinct follow-up interview questions.\n"
+            "RULES:\n"
+            "1. DO NOT simply change scale numbers (e.g., swapping 100 to 5,000 requests is strictly forbidden).\n"
+            "2. Variant 1 must introduce a major distributed systems or high-concurrency constraint (e.g. partition tolerance, lock-free structures, disk spillover memory bounds, or multi-datacenter consensus).\n"
+            "3. Variant 2 must introduce a resilience, failover, or hard algorithmic boundary condition (e.g. Byzantine failure mitigation, zero-data-loss crash recovery, dynamic schema evolution, or p99 tail latency bounding).\n"
+            "4. Both items must have \"source_type\": \"ai_followup\"."
+        )
+
+        try:
+            if await self.is_available():
+                extracted = await self.extract_structured_json(task, schema)
+                if isinstance(extracted, list) and len(extracted) >= 2:
+                    clean_res = []
+                    for item in extracted[:2]:
+                        if isinstance(item, dict) and item.get("question_text"):
+                            item["source_type"] = "ai_followup"
+                            if not item.get("difficulty"):
+                                item["difficulty"] = "Hard"
+                            clean_res.append(item)
+                    if len(clean_res) == 2:
+                        return clean_res
+        except Exception as e:
+            logger.debug(f"Nemotron follow-up generation failed, using structural fallback: {e}")
+
+        # Deterministic structural fallback engine
+        is_design = any(k in base_question.lower() for k in ["design", "architecture", "scale", "system", "service", "cluster"])
+        if is_design:
+            v1_text = (
+                f"Active-Active Geo-Replication Follow-up for {company}: How would you extend this system "
+                f"across 3 active-active cloud regions with sub-20ms p99 write latency? Specifically address "
+                f"conflict-free replicated data types (CRDTs), partition tolerance under cross-region fiber cuts, "
+                f"and cross-region read-after-write causal consistency."
+            )
+            v2_text = (
+                f"Chaos Resilience & Graceful Degradation Follow-up for {company}: During a major dependency outage "
+                f"where 35% of downstream services fail or experience 5-second timeouts, how does your architecture "
+                f"enforce circuit breaking, tenant-level token bucket shedding, and asynchronous reconciliation "
+                f"to ensure zero data loss and prevent cascading system-wide collapse?"
+            )
+            cat1 = "Distributed Systems"
+            cat2 = "System Design"
+            skills1 = ["Geo-Replication", "CRDTs", "Causal Consistency"]
+            skills2 = ["Circuit Breakers", "Chaos Engineering", "Resilience"]
+        else:
+            v1_text = (
+                f"Distributed In-Memory Partitioning Follow-up for {company}: How would you adapt this algorithmic "
+                f"solution if the input data stream exceeds single-node RAM by 100x and must be partitioned across "
+                f"a cluster of 32 worker nodes? Formulate the data partitioning strategy (consistent hashing) and "
+                f"distributed state synchronization protocol to minimize network shuffling."
+            )
+            v2_text = (
+                f"Lock-Free Concurrency & Memory Safety Follow-up for {company}: Re-implement this solution for a "
+                f"multi-threaded environment with 128 hardware threads contending concurrently. Eliminate global mutex locks "
+                f"using atomic compare-and-swap (CAS) primitives and analyze memory ordering (acquire-release semantics) "
+                f"to prevent race conditions, false sharing, and ABA anomalies."
+            )
+            cat1 = "Concurrency & Multi-Threading"
+            cat2 = "Data Structures & Algorithms"
+            skills1 = ["Distributed Partitioning", "Consistent Hashing", "Shuffling"]
+            skills2 = ["Lock-Free Concurrency", "Atomic CAS", "Memory Barriers"]
+
+        return [
+            {
+                "variant_type": "Distributed Scale & Concurrency Variant",
+                "question_text": v1_text,
+                "category": cat1,
+                "difficulty": "Hard",
+                "skills_tested": skills1,
+                "source_type": "ai_followup",
+            },
+            {
+                "variant_type": "Fault Tolerance & Boundary Resilience",
+                "question_text": v2_text,
+                "category": cat2,
+                "difficulty": "Hard",
+                "skills_tested": skills2,
+                "source_type": "ai_followup",
+            },
+        ]

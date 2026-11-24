@@ -17,8 +17,12 @@ from typing import Dict, Any, List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from database.repository import get_db_repository
-from database.models import InterviewQuestion
+from database.models import InterviewQuestion, QuestionEmbedding
+from agents.deduplication_agent import canonicalize_text
+from models.embedding_model import LocalEmbeddingModel
 from core.logging import logger
+import uuid
+import re
 
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 SPLITS_DIR = os.path.join(DATA_DIR, "splits")
@@ -183,6 +187,146 @@ def export_dataset() -> Dict[str, Any]:
         return metadata
 
 
+def purge_noise_and_junk(dry_run: bool = False) -> Dict[str, Any]:
+    """
+    Purges synthetic clones, HTML fragments, blog headlines, and broken categories.
+    """
+    db = get_db_repository()
+    purged_ids = []
+    reasons = {}
+
+    with db.get_session() as session:
+        questions = session.query(InterviewQuestion).all()
+        for q in questions:
+            text = q.question_text or ""
+            cat = q.question_category or ""
+
+            is_junk = False
+            reason = ""
+
+            # Check HTML noise
+            if any(tag in text.lower() for tag in ["<details", "<summary", "<div", "<span", "<table", "<tr", "<td"]):
+                is_junk = True
+                reason = "HTML tags in question text"
+            # Check broken categories
+            elif cat.endswith(" Domain") or cat == "Domain":
+                is_junk = True
+                reason = f"Broken category '{cat}'"
+            # Check length
+            elif len(text.split()) < 10 or len(text.strip()) < 40:
+                is_junk = True
+                reason = "Question too short (<10 words)"
+            # Check blog headlines or opinion rants
+            elif text.startswith("Deconstructed:") or "Interview Questions for Growth from" in text or "would you tolerate male-only" in text.lower():
+                is_junk = True
+                reason = "Blog headline or forum debate noise"
+
+            if is_junk:
+                purged_ids.append(q.id)
+                reasons[q.id] = reason
+                if not dry_run:
+                    # Delete embedding
+                    session.query(QuestionEmbedding).filter(QuestionEmbedding.question_id == q.id).delete()
+                    # Delete question
+                    session.delete(q)
+
+        if not dry_run and purged_ids:
+            session.commit()
+            logger.info(f"Purged {len(purged_ids)} junk questions and embeddings.")
+
+    return {
+        "purged_count": len(purged_ids),
+        "dry_run": dry_run,
+        "sample_purged": list(reasons.items())[:10],
+    }
+
+
+def deduplicate_dataset(dry_run: bool = False) -> Dict[str, Any]:
+    """
+    Identifies and collapses duplicate questions using canonical <NUM> unit masking.
+    """
+    db = get_db_repository()
+    duplicates_to_delete = []
+
+    with db.get_session() as session:
+        questions = session.query(InterviewQuestion).all()
+        canonical_groups: Dict[tuple, List[InterviewQuestion]] = {}
+
+        for q in questions:
+            norm_key = (
+                (q.company_name or "").lower().strip(),
+                canonicalize_text(q.question_text or ""),
+            )
+            canonical_groups.setdefault(norm_key, []).append(q)
+
+        for norm_key, group in canonical_groups.items():
+            if len(group) > 1:
+                # Keep highest confidence or earliest
+                sorted_group = sorted(
+                    group,
+                    key=lambda x: (getattr(x, "confidence_score", 0.0) or 0.0),
+                    reverse=True,
+                )
+                keep_item = sorted_group[0]
+                remove_items = sorted_group[1:]
+                for rem in remove_items:
+                    duplicates_to_delete.append(rem.id)
+                    if not dry_run:
+                        session.query(QuestionEmbedding).filter(QuestionEmbedding.question_id == rem.id).delete()
+                        session.delete(rem)
+
+        if not dry_run and duplicates_to_delete:
+            session.commit()
+            logger.info(f"Deduplicated {len(duplicates_to_delete)} duplicate questions.")
+
+    return {
+        "duplicate_count": len(duplicates_to_delete),
+        "dry_run": dry_run,
+    }
+
+
+def rebuild_or_verify_embeddings() -> Dict[str, Any]:
+    """
+    Verifies that every active interview question has an associated embedding vector.
+    Rebuilds any missing embeddings using LocalEmbeddingModel.
+    """
+    db = get_db_repository()
+    embedder = LocalEmbeddingModel()
+    created_count = 0
+
+    with db.get_session() as session:
+        questions = session.query(InterviewQuestion).all()
+        existing_embeddings = {
+            e.question_id for e in session.query(QuestionEmbedding.question_id).all()
+        }
+
+        for q in questions:
+            if q.id not in existing_embeddings:
+                vec = embedder.generate_embedding(q.question_text)
+                emb_entry = QuestionEmbedding(
+                    id=str(uuid.uuid4()),
+                    question_id=q.id,
+                    model_version=embedder.model_name,
+                    embedding_vector=vec,
+                    created_at=datetime.utcnow(),
+                )
+                session.add(emb_entry)
+                created_count += 1
+
+        if created_count > 0:
+            session.commit()
+            logger.info(f"Generated {created_count} missing question embeddings.")
+
+        total_questions = len(questions)
+        total_embeddings = session.query(QuestionEmbedding).count()
+
+    return {
+        "total_questions": total_questions,
+        "total_embeddings": total_embeddings,
+        "newly_generated": created_count,
+    }
+
+
 def audit_dataset() -> Dict[str, Any]:
     """
     Performs comprehensive data quality audit across completeness, deduplication, and schema validity.
@@ -220,17 +364,38 @@ def audit_dataset() -> Dict[str, Any]:
 
 def main():
     parser = argparse.ArgumentParser(description="Interview Intelligence Dataset Maintenance")
-    parser.add_argument("--action", choices=["export", "audit", "sync"], default="sync", help="Action to perform (export, audit, sync)")
+    parser.add_argument(
+        "--action",
+        choices=["export", "audit", "sync", "purge", "deduplicate", "rebuild-embeddings", "full-maintenance"],
+        default="sync",
+        help="Action to perform",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Perform checks without deleting records")
     args = parser.parse_args()
 
-    if args.action in ["export", "sync"]:
-        print("Exporting and maintaining structured dataset...")
+    if args.action in ["purge", "full-maintenance"]:
+        print("\n🧹 Purging HTML noise, broken categories, and non-question fragments...")
+        p_res = purge_noise_and_junk(dry_run=args.dry_run)
+        print(f"Purge complete: {p_res['purged_count']} items {'flagged' if args.dry_run else 'purged'}.")
+
+    if args.action in ["deduplicate", "full-maintenance"]:
+        print("\n🔍 Running canonical <NUM> unit-masked deduplication...")
+        d_res = deduplicate_dataset(dry_run=args.dry_run)
+        print(f"Deduplication complete: {d_res['duplicate_count']} duplicates {'flagged' if args.dry_run else 'removed'}.")
+
+    if args.action in ["rebuild-embeddings", "full-maintenance"]:
+        print("\n🧠 Verifying and rebuilding missing vector embeddings...")
+        e_res = rebuild_or_verify_embeddings()
+        print(f"Embeddings: {e_res['total_embeddings']}/{e_res['total_questions']} present, {e_res['newly_generated']} generated.")
+
+    if args.action in ["export", "sync", "full-maintenance"]:
+        print("\n📦 Exporting and maintaining structured dataset...")
         meta = export_dataset()
-        print(f"Dataset maintained successfully: {meta['total_questions']} questions exported across {meta['total_companies']} companies.")
+        print(f"Dataset maintained: {meta['total_questions']} questions exported across {meta['total_companies']} companies.")
         print(f"Files saved in: {DATA_DIR}")
 
-    if args.action in ["audit", "sync"]:
-        print("\nAuditing dataset quality...")
+    if args.action in ["audit", "sync", "full-maintenance"]:
+        print("\n🩺 Auditing dataset quality...")
         audit = audit_dataset()
         print(f"Audit completed: Health Score = {audit['health_score_pct']}% | Status = {audit['status']} | Duplicates = {audit['duplicate_hashes']}")
 

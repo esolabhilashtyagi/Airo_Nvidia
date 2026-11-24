@@ -163,6 +163,7 @@ class InterviewQuestion(Base):
     collection_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     verification_status = Column(String(50), default="UNVERIFIED", index=True) # VERIFIED, UNCERTAIN, REJECTED
     confidence_score = Column(Float, default=0.0)
+    source_type = Column(String(50), default="scraped", index=True) # "scraped" vs "ai_followup"
     content_hash = Column(String(64), unique=True, nullable=False, index=True)
 
     experience = relationship("InterviewExperience", back_populates="questions")

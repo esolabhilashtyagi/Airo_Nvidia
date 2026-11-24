@@ -3,8 +3,13 @@ GeeksforGeeks Interview Archive Collector.
 Collects public interview experiences with full multi-round breakdowns across top product companies.
 """
 
-from typing import List, Dict, Any
+import os
+import re
+import httpx
+from typing import List, Dict, Any, Optional
 from datetime import datetime
+from bs4 import BeautifulSoup
+import trafilatura
 from .base_collector import BaseCollector
 from core.logging import logger
 
@@ -243,16 +248,99 @@ class GFGCollector(BaseCollector):
             },
         ]
 
-    async def collect(self, limit: int = 25, use_mock: bool = False) -> List[Dict[str, Any]]:
-        samples = self._get_curated_archives()
-        return [
-            {
-                "source_platform": "GeeksforGeeks",
-                "original_url": s["url"],
-                "title": s["title"],
-                "raw_text": s["text"],
-                "publication_date": s["date"],
-                "collected_at": datetime.utcnow().isoformat(),
-            }
-            for s in samples[:limit]
-        ]
+    async def fetch_live_experiences(
+        self, company: Optional[str] = None, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Scrapes authentic live interview experiences from GeeksforGeeks archives.
+        """
+        urls_to_try = []
+        if company:
+            clean_co = company.lower().replace(" ", "-")
+            urls_to_try.append(f"https://www.geeksforgeeks.org/tag/{clean_co}-interview-experience/")
+            urls_to_try.append(f"https://www.geeksforgeeks.org/company/{clean_co}/")
+        urls_to_try.append("https://www.geeksforgeeks.org/interview-experiences/")
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+
+        results: List[Dict[str, Any]] = []
+        discovered_links: List[str] = []
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                for target_url in urls_to_try:
+                    try:
+                        resp = await client.get(target_url, headers=headers)
+                        if resp.status_code == 200:
+                            soup = BeautifulSoup(resp.text, "html.parser")
+                            for a_tag in soup.find_all("a", href=True):
+                                href = a_tag["href"]
+                                if ("interview-experience" in href or "interview-questions" in href) and href.startswith("https://www.geeksforgeeks.org/"):
+                                    if href not in discovered_links and not href.endswith("/tag/") and not href.endswith("/company/"):
+                                        discovered_links.append(href)
+                                        if len(discovered_links) >= limit:
+                                            break
+                        if len(discovered_links) >= limit:
+                            break
+                    except Exception as e:
+                        logger.debug(f"GFG crawl attempt failed for {target_url}: {e}")
+
+                # Fetch article bodies for discovered links
+                for link in discovered_links[:limit]:
+                    try:
+                        art_resp = await client.get(link, headers=headers)
+                        if art_resp.status_code == 200:
+                            extracted_text = trafilatura.extract(
+                                art_resp.text,
+                                include_comments=False,
+                                include_tables=True,
+                                no_fallback=False,
+                            )
+                            if extracted_text and len(extracted_text) >= 150:
+                                # Extract title
+                                soup = BeautifulSoup(art_resp.text, "html.parser")
+                                title = soup.title.string.strip() if soup.title and soup.title.string else "GFG Interview Experience"
+                                results.append({
+                                    "source_platform": "GeeksforGeeks",
+                                    "original_url": link,
+                                    "title": title,
+                                    "raw_text": f"Title: {title}\n\n{extracted_text}",
+                                    "publication_date": datetime.utcnow().isoformat(),
+                                    "collected_at": datetime.utcnow().isoformat(),
+                                })
+                    except Exception as e:
+                        logger.debug(f"GFG article fetch failed for {link}: {e}")
+        except Exception as e:
+            logger.info(f"GFG live crawler encountered error: {e}")
+
+        return results
+
+    async def collect(
+        self, limit: int = 25, use_mock: bool = False, company: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+
+        if not use_mock:
+            try:
+                live_items = await self.fetch_live_experiences(company=company, limit=limit)
+                results.extend(live_items)
+            except Exception as e:
+                logger.info(f"GFG live collection fallback: {e}")
+
+        if len(results) < limit:
+            samples = self._get_curated_archives()
+            needed = limit - len(results)
+            for s in samples[:needed]:
+                results.append({
+                    "source_platform": "GeeksforGeeks",
+                    "original_url": s["url"],
+                    "title": s["title"],
+                    "raw_text": s["text"],
+                    "publication_date": s["date"],
+                    "collected_at": datetime.utcnow().isoformat(),
+                })
+
+        return results[:limit]

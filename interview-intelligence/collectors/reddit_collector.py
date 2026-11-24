@@ -4,9 +4,10 @@ Collects public interview experiences from authorized developer feeds (Reddit, H
 and provides an extensive curated repository of realistic multi-round experiences.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
+import httpx
 from .base_collector import BaseCollector
 from core.logging import logger
 
@@ -284,8 +285,10 @@ class RedditCollector(BaseCollector):
             },
         ]
 
-    async def collect(self, limit: int = 25, use_mock: bool = False) -> List[Dict[str, Any]]:
-        results = []
+    async def collect(
+        self, limit: int = 25, use_mock: bool = False, company: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
         samples = self._get_curated_samples()
 
         if use_mock:
@@ -300,55 +303,54 @@ class RedditCollector(BaseCollector):
                 })
             return results
 
-        # 1. Live Fetch Attempt: HackerNews open Algolia API (Public, rate-limit friendly, highly reliable)
+        # 1. Live Fetch: Technical Developer Subreddits
+        subreddits = [
+            "cscareerquestions",
+            "ExperiencedDevs",
+            "leetcode",
+            "MLQuestions",
+            "ProductManagement",
+            "sre",
+            "dataengineering",
+        ]
+        query_term = f"{company} interview" if company else "interview experience"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (InterviewIntelligenceBot/2.0)",
+        }
+
         try:
-            hn_url = f"https://hn.algolia.com/api/v1/search?query=interview%20experience&tags=story&hitsPerPage={min(limit, 20)}"
-            content = await self.fetch_url(hn_url)
-            if content:
-                data = json.loads(content)
-                hits = data.get("hits", [])
-                for hit in hits:
-                    title = hit.get("title", "")
-                    story_text = hit.get("story_text") or hit.get("comment_text") or ""
-                    url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
-                    combined = f"{title}\n\n{story_text}".strip()
-                    if len(combined) >= 60:
-                        results.append({
-                            "source_platform": "HackerNews",
-                            "original_url": url,
-                            "title": title,
-                            "raw_text": combined,
-                            "publication_date": hit.get("created_at", datetime.utcnow().isoformat()),
-                            "collected_at": datetime.utcnow().isoformat(),
-                        })
+            async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+                for sub in subreddits:
+                    if len(results) >= limit:
+                        break
+                    reddit_url = f"https://www.reddit.com/r/{sub}/search.json?q={query_term}&restrict_sr=1&sort=new&limit={min(limit, 15)}"
+                    try:
+                        resp = await client.get(reddit_url)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            children = data.get("data", {}).get("children", [])
+                            for child in children:
+                                post = child.get("data", {})
+                                title = post.get("title", "")
+                                selftext = post.get("selftext", "")
+                                # Check for substantive technical interview context
+                                if len(selftext) > 120 and any(kw in selftext.lower() for kw in ["round", "asked", "question", "problem", "design", "interview"]):
+                                    results.append({
+                                        "source_platform": "Reddit",
+                                        "original_url": f"https://reddit.com{post.get('permalink')}",
+                                        "title": title,
+                                        "raw_text": f"Title: {title}\n\n{selftext}",
+                                        "publication_date": datetime.utcfromtimestamp(post.get("created_utc", 0)).isoformat(),
+                                        "collected_at": datetime.utcnow().isoformat(),
+                                    })
+                                    if len(results) >= limit:
+                                        break
+                    except Exception as e:
+                        logger.debug(f"Reddit r/{sub} search skipped: {e}")
         except Exception as e:
-            logger.info(f"HackerNews live fetch skipped: {e}")
+            logger.info(f"Reddit client error: {e}")
 
-        # 2. Live Fetch Attempt: Public Reddit feed
-        if len(results) < limit:
-            reddit_url = f"{self.base_url}/search.json?q=interview+experience&restrict_sr=on&limit={limit}"
-            try:
-                content = await self.fetch_url(reddit_url)
-                if content:
-                    data = json.loads(content)
-                    children = data.get("data", {}).get("children", [])
-                    for child in children:
-                        post = child.get("data", {})
-                        title = post.get("title", "")
-                        selftext = post.get("selftext", "")
-                        if len(selftext) > 100:
-                            results.append({
-                                "source_platform": "Reddit",
-                                "original_url": f"https://reddit.com{post.get('permalink')}",
-                                "title": title,
-                                "raw_text": f"{title}\n\n{selftext}",
-                                "publication_date": datetime.utcfromtimestamp(post.get("created_utc", 0)).isoformat(),
-                                "collected_at": datetime.utcnow().isoformat(),
-                            })
-            except Exception as e:
-                logger.info(f"Reddit live fetch skipped: {e}")
-
-        # 3. Always backfill up to limit with our curated high-yield experiences
+        # 2. Always backfill up to limit with our curated high-yield experiences
         if len(results) < limit:
             needed = limit - len(results)
             for s in samples[:needed]:

@@ -4,8 +4,12 @@ Collects public architecture case studies, hiring guides, and system design chal
 from official engineering blogs (Netflix, Uber, Meta, Stripe, AWS, Discord, Cloudflare).
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime
+import re
+import httpx
+import xml.etree.ElementTree as ET
+import trafilatura
 from .base_collector import BaseCollector
 from core.logging import logger
 
@@ -188,16 +192,90 @@ class CompanyBlogCollector(BaseCollector):
             },
         ]
 
-    async def collect(self, limit: int = 25, use_mock: bool = False) -> List[Dict[str, Any]]:
-        samples = self._get_curated_blog_studies()
-        return [
-            {
-                "source_platform": "Engineering Blogs",
-                "original_url": s["url"],
-                "title": s["title"],
-                "raw_text": s["text"],
-                "publication_date": s["date"],
-                "collected_at": datetime.utcnow().isoformat(),
-            }
-            for s in samples[:limit]
+    async def fetch_live_blog_posts(self, limit: int = 15) -> List[Dict[str, Any]]:
+        """
+        Fetches live engineering case studies from official engineering blog RSS feeds.
+        """
+        feeds = [
+            ("Netflix", "https://netflixtechblog.com/feed"),
+            ("Cloudflare", "https://blog.cloudflare.com/rss/"),
+            ("Uber", "https://eng.uber.com/feed/"),
         ]
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        }
+        results: List[Dict[str, Any]] = []
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+                for company_name, feed_url in feeds:
+                    if len(results) >= limit:
+                        break
+                    try:
+                        resp = await client.get(feed_url)
+                        if resp.status_code == 200:
+                            root = ET.fromstring(resp.text)
+                            # Handle both RSS <item> and Atom <entry>
+                            items = root.findall(".//item") or root.findall(".//{http://www.w3.org/2005/Atom}entry")
+                            for item in items[:5]:
+                                title_elem = item.find("title") or item.find("{http://www.w3.org/2005/Atom}title")
+                                title = title_elem.text.strip() if title_elem is not None and title_elem.text else f"{company_name} Architecture Study"
+
+                                link_elem = item.find("link") or item.find("{http://www.w3.org/2005/Atom}link")
+                                link = link_elem.text.strip() if link_elem is not None and link_elem.text else feed_url
+
+                                desc_elem = item.find("description") or item.find("{http://www.w3.org/2005/Atom}summary")
+                                desc_text = desc_elem.text if desc_elem is not None and desc_elem.text else ""
+                                clean_desc = re.sub(r"<[^>]+>", " ", desc_text).strip()
+
+                                if len(clean_desc) > 80:
+                                    structured_text = (
+                                        f"Company: {company_name}\nRole: Senior Systems / Distributed Systems Engineer\n"
+                                        f"Architecture Problem: {title}\n\n"
+                                        f"Case Context: {clean_desc[:400]}...\n\n"
+                                        f"Interview Focus: How would you architect this service for multi-region active-active failover, "
+                                        f"sub-millisecond latency, and distributed consensus?"
+                                    )
+                                    results.append({
+                                        "source_platform": "Engineering Blogs",
+                                        "original_url": link,
+                                        "title": title,
+                                        "raw_text": structured_text,
+                                        "publication_date": datetime.utcnow().isoformat(),
+                                        "collected_at": datetime.utcnow().isoformat(),
+                                    })
+                                    if len(results) >= limit:
+                                        break
+                    except Exception as e:
+                        logger.debug(f"Feed fetch skipped for {feed_url}: {e}")
+        except Exception as e:
+            logger.info(f"Live engineering blog fetch error: {e}")
+
+        return results
+
+    async def collect(
+        self, limit: int = 25, use_mock: bool = False
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+
+        if not use_mock:
+            try:
+                live_items = await self.fetch_live_blog_posts(limit=limit)
+                results.extend(live_items)
+            except Exception as e:
+                logger.info(f"Engineering blog live fallback: {e}")
+
+        if len(results) < limit:
+            samples = self._get_curated_blog_studies()
+            needed = limit - len(results)
+            for s in samples[:needed]:
+                results.append({
+                    "source_platform": "Engineering Blogs",
+                    "original_url": s["url"],
+                    "title": s["title"],
+                    "raw_text": s["text"],
+                    "publication_date": s["date"],
+                    "collected_at": datetime.utcnow().isoformat(),
+                })
+
+        return results[:limit]
