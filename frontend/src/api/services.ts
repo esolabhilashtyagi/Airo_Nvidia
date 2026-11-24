@@ -90,6 +90,12 @@ export const companyIntelApi = {
 
   listCompanies: async () => apiClient<CompanySummary[]>('/questions/company-intel/companies'),
 
+  listRoles: async (company?: string) =>
+    apiClient<string[]>(`/questions/company-intel/roles${company ? `?company=${encodeURIComponent(company)}` : ''}`),
+
+  listCategories: async (company?: string) =>
+    apiClient<string[]>(`/questions/company-intel/categories${company ? `?company=${encodeURIComponent(company)}` : ''}`),
+
   getBlueprint: async (companyName: string, role = 'Software Development Engineer', yoe = 3.5) =>
     apiClient<CompanyBlueprint>(`/questions/company-intel/blueprint/${encodeURIComponent(companyName)}?role=${encodeURIComponent(role)}&yoe=${yoe}`),
 
@@ -113,7 +119,18 @@ export const companyIntelApi = {
       body: JSON.stringify(payload),
     }),
 
-  triggerLiveScrape: async (payload: { company: string; role?: string; keyword?: string; limit?: number; max_pages?: number }) =>
+  triggerLiveScrape: async (payload: {
+    company: string;
+    role?: string;
+    yoe?: number;
+    skills?: string[];
+    round_number?: number;
+    difficulty?: string;
+    platforms?: string[];
+    keyword?: string;
+    limit?: number;
+    max_pages?: number;
+  }) =>
     apiClient<any>('/questions/company-intel/live-scrape', {
       method: 'POST',
       body: JSON.stringify(payload),

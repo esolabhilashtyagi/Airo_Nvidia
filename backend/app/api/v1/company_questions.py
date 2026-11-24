@@ -85,8 +85,13 @@ class RoundQuestionsRequest(BaseModel):
 class LiveScrapeRequest(BaseModel):
     company: str = "Google"
     role: str = "Software Engineer"
+    yoe: Optional[float] = 3.5
+    skills: Optional[List[str]] = Field(default_factory=list)
+    round_number: Optional[int] = None
+    difficulty: Optional[str] = None
+    platforms: Optional[List[str]] = Field(default_factory=list)
     keyword: Optional[str] = ""
-    limit: Optional[int] = 50
+    limit: Optional[int] = 30
     max_pages: int = 3
 
 
@@ -130,6 +135,32 @@ async def list_companies(
     return APIResponse(
         data=companies,
         message="Company interview intelligence directory retrieved",
+    )
+
+
+@router.get("/roles", response_model=APIResponse[List[str]])
+async def list_roles(
+    company: Optional[str] = Query(None, description="Optional company filter"),
+    _candidate: Optional[CandidateProfile] = Depends(get_optional_candidate_profile),
+):
+    """List distinct indexed job roles across companies."""
+    roles = InterviewIntelligenceBridge.list_roles(company=company)
+    return APIResponse(
+        data=roles,
+        message="Job roles directory retrieved",
+    )
+
+
+@router.get("/categories", response_model=APIResponse[List[str]])
+async def list_categories(
+    company: Optional[str] = Query(None, description="Optional company filter"),
+    _candidate: Optional[CandidateProfile] = Depends(get_optional_candidate_profile),
+):
+    """List distinct question categories across companies."""
+    categories = InterviewIntelligenceBridge.list_categories(company=company)
+    return APIResponse(
+        data=categories,
+        message="Question categories directory retrieved",
     )
 
 
@@ -244,8 +275,13 @@ async def trigger_live_scrape(
     result = await InterviewIntelligenceBridge.trigger_live_scrape(
         company=payload.company,
         role=payload.role,
+        yoe=payload.yoe if payload.yoe is not None else 3.5,
+        skills=payload.skills or [],
+        round_number=payload.round_number,
+        difficulty=payload.difficulty,
+        platforms=payload.platforms or [],
         keyword=payload.keyword or "",
-        limit=payload.limit,
+        limit=payload.limit or 30,
         max_pages=payload.max_pages,
     )
     return APIResponse(

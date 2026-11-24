@@ -114,7 +114,82 @@ export function QuestionBankPage() {
   const [scrapeSuccessMsg, setScrapeSuccessMsg] = useState('');
   const [targetYoE, setTargetYoE] = useState<number>(3.5);
   const [targetSkills, setTargetSkills] = useState<string>('Python, Distributed Systems, Concurrency, Algorithms');
+  const [targetRole, setTargetRole] = useState<string>('Software Engineer');
+  const [customRoleInput, setCustomRoleInput] = useState<string>('');
+  const [availableRoles, setAvailableRoles] = useState<string[]>([
+    'Software Engineer',
+    'Senior Software Engineer',
+    'Backend Engineer',
+    'Fullstack Engineer',
+    'Frontend Engineer',
+    'Machine Learning Engineer',
+    'Distributed Systems Engineer',
+    'Senior Data Engineer',
+    'DevOps / SRE Engineer',
+    'Product Manager',
+  ]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([
+    'Data Structures and Algorithms',
+    'System Design',
+    'Trees and Graphs',
+    'Arrays and Strings',
+    'Dynamic Programming',
+    'Object-Oriented Programming',
+    'Operating Systems',
+    'Computer Networks',
+    'DBMS and SQL',
+    'HR and Behavioral',
+  ]);
+  const [customCompanyInput, setCustomCompanyInput] = useState<string>('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
+
+  const [scrapeRound, setScrapeRound] = useState<string>('');
+  const [scrapeDifficulty, setScrapeDifficulty] = useState<string>('');
+  const [scrapeLimit, setScrapeLimit] = useState<number>(30);
+  const [scrapePlatforms, setScrapePlatforms] = useState<string[]>([
+    'LeetCode',
+    'GeeksforGeeks',
+    'Reddit',
+    'Open Web',
+  ]);
+
+  function togglePlatform(plat: string) {
+    setScrapePlatforms((prev) =>
+      prev.includes(plat) ? (prev.length > 1 ? prev.filter((p) => p !== plat) : prev) : [...prev, plat]
+    );
+  }
+
+  function handleRoleChange(newRole: string) {
+    setTargetRole(newRole);
+    const rLower = (newRole === 'custom' ? customRoleInput : newRole).toLowerCase();
+    if (rLower.includes('finance') || rLower.includes('financial') || rLower.includes('fpa') || rLower.includes('accounting') || rLower.includes('valuation') || rLower.includes('treasury')) {
+      setTargetSkills('Financial Modeling, DCF, Variance Analysis, Excel VBA, FP&A, GAAP / IFRS, Budgeting & Forecasting');
+    } else if (rLower.includes('machine learning') || rLower.includes('ai') || rLower.includes('ml') || rLower.includes('genai') || rLower.includes('llm')) {
+      setTargetSkills('PyTorch, CUDA, Transformers, Distributed Training, Model Quantization, RAG');
+    } else if (rLower.includes('frontend') || rLower.includes('ui') || rLower.includes('web') || rLower.includes('react')) {
+      setTargetSkills('React, TypeScript, Web Performance, State Management, DOM & CSS, Next.js');
+    } else if (rLower.includes('data') || rLower.includes('analytics') || rLower.includes('analyst') || rLower.includes('bi')) {
+      setTargetSkills('SQL, Statistics, Tableau, Data Warehousing, Python, ETL Pipelines, A/B Testing');
+    } else if (rLower.includes('devops') || rLower.includes('sre') || rLower.includes('cloud') || rLower.includes('infrastructure')) {
+      setTargetSkills('Kubernetes, Docker, Terraform, CI/CD, Linux Internals, Observability, AWS/Azure');
+    } else if (rLower.includes('backend') || rLower.includes('systems') || rLower.includes('distributed')) {
+      setTargetSkills('Go, Distributed Systems, Concurrency, Kafka, PostgreSQL, Microservices, gRPC');
+    } else if (rLower.includes('product') || rLower.includes('pm')) {
+      setTargetSkills('Product Strategy, User Empathy, Metrics & KPIs, A/B Testing, Prioritization, PRDs');
+    } else if (rLower.includes('design') || rLower.includes('ux')) {
+      setTargetSkills('Figma, Design Systems, User Research, Wireframing, Interaction Design, Prototyping');
+    } else if (rLower.includes('security') || rLower.includes('cyber') || rLower.includes('infosec')) {
+      setTargetSkills('Threat Modeling, OWASP, Penetration Testing, IAM, Cryptography, SOC2 Compliance');
+    } else if (rLower.includes('sales') || rLower.includes('commercial')) {
+      setTargetSkills('Solution Value Pitch, MEDDPICC, Pipeline Management, Discovery Calls, Objection Handling');
+    } else if (rLower.includes('hr') || rLower.includes('talent') || rLower.includes('people')) {
+      setTargetSkills('STAR Behavioral Framework, Competency Rubrics, Talent Pipeline, Culture Assessment');
+    } else {
+      setTargetSkills('Data Structures, Algorithms, System Design, Concurrency, Clean Code');
+    }
+  }
 
   async function handleGenerateNemotron() {
     setGeneratingNemotron(true);
@@ -124,13 +199,13 @@ export function QuestionBankPage() {
       const [dorksResp, synthResp] = await Promise.all([
         companyIntelApi.generateDorks({
           company: selectedCompany,
-          role: 'Software Development Engineer',
+          role: effectiveRole,
           yoe: targetYoE,
           skills: skillsArr,
         }),
         companyIntelApi.synthesizeRoundQuestions({
           company: selectedCompany,
-          role: 'Software Development Engineer',
+          role: effectiveRole,
           yoe: targetYoE,
           skills: skillsArr,
           round_number: selectedRound ? parseInt(selectedRound, 10) : undefined,
@@ -150,15 +225,27 @@ export function QuestionBankPage() {
     setScrapeSuccessMsg('');
     setError('');
     try {
+      const skillsArr = targetSkills.split(',').map((s) => s.trim()).filter(Boolean);
       const res = await companyIntelApi.triggerLiveScrape({
         company: selectedCompany,
-        role: 'Software Engineer',
+        role: effectiveRole,
+        yoe: targetYoE,
+        skills: skillsArr,
+        round_number: scrapeRound ? parseInt(scrapeRound, 10) : undefined,
+        difficulty: scrapeDifficulty || undefined,
+        platforms: scrapePlatforms,
         keyword: companySearchInput || '',
-        limit: 50,
+        limit: scrapeLimit,
         max_pages: 3,
       });
+      const countStored = res.stored_in_database ?? 0;
+      const countExtracted = res.extracted_questions_count ?? 0;
+      const countSources = res.scraped_sources_count ?? 4;
+      const dbStatus = countStored > 0
+        ? `saved ${countStored} new records into database`
+        : `all ${countExtracted} questions verified & synced in database`;
       setScrapeSuccessMsg(
-        `Scraped ${res.scraped_sources_count ?? 0} web sources and saved ${res.stored_in_database ?? 0} authentic questions into database for ${selectedCompany}!`
+        `✅ Live Scrape Complete: Scraped ${countSources} web sources, extracted ${countExtracted} authentic questions for ${selectedCompany} (${effectiveRole}, ${targetYoE} yrs YoE) and ${dbStatus}!`
       );
       void loadCompanyQuestions();
     } catch (err) {
@@ -224,6 +311,7 @@ export function QuestionBankPage() {
     try {
       const params: Record<string, any> = {
         company: selectedCompany,
+        role: effectiveRole !== 'All Roles' ? effectiveRole : undefined,
         round_number: selectedRound ? parseInt(selectedRound, 10) : undefined,
         category: companyCategory || undefined,
         difficulty: companyDifficulty || undefined,
@@ -239,20 +327,55 @@ export function QuestionBankPage() {
     } finally {
       setCompanyLoading(false);
     }
-  }, [selectedCompany, selectedRound, companyCategory, companyDifficulty, companySearch, companyPage]);
+  }, [selectedCompany, effectiveRole, selectedRound, companyCategory, companyDifficulty, companySearch, companyPage]);
 
-  // Initial Load Companies Directory
+  // Initial Dynamic Metadata Directory (Companies, Roles, Categories)
   useEffect(() => {
-    async function fetchCompanies() {
+    let mounted = true;
+    async function fetchDynamicMetadata() {
       try {
-        const comps = await companyIntelApi.listCompanies();
-        setCompanies(comps ?? []);
+        const [comps, roles, cats] = await Promise.all([
+          companyIntelApi.listCompanies(),
+          companyIntelApi.listRoles(),
+          companyIntelApi.listCategories(),
+        ]);
+        if (mounted) {
+          if (comps?.length) setCompanies(comps);
+          if (roles?.length) setAvailableRoles(roles);
+          if (cats?.length) setAvailableCategories(cats);
+        }
       } catch (err) {
-        console.error('Failed to list companies:', err);
+        console.warn('Failed to load dynamic company intel metadata:', err);
       }
     }
-    void fetchCompanies();
+    void fetchDynamicMetadata();
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  // Update roles and categories when selectedCompany changes
+  useEffect(() => {
+    let mounted = true;
+    async function updateCompanySpecificMeta() {
+      try {
+        const [roles, cats] = await Promise.all([
+          companyIntelApi.listRoles(selectedCompany),
+          companyIntelApi.listCategories(selectedCompany),
+        ]);
+        if (mounted) {
+          if (roles?.length) setAvailableRoles(roles);
+          if (cats?.length) setAvailableCategories(cats);
+        }
+      } catch (e) {
+        // preserve existing
+      }
+    }
+    void updateCompanySpecificMeta();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedCompany]);
 
   useEffect(() => {
     if (activeTab === 'standard') {
@@ -461,28 +584,75 @@ export function QuestionBankPage() {
       {/* ========================================================================= */}
       {activeTab === 'company' && (
         <div className="space-y-5">
-          {/* Company Quick-Select Bar */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Target Tech Company</p>
-            <div className="flex flex-wrap gap-2">
-              {['Google', 'Meta', 'Amazon', 'Microsoft', 'Uber', 'Stripe', 'Netflix', 'Apple', 'NVIDIA', 'Atlassian', 'Zepto', 'Databricks', 'OpenAI', 'Figma', 'Salesforce'].map((comp) => (
+          {/* Dynamic Company Selection & Custom Search Bar */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Target Tech Company ({companies.length} Indexed)
+              </p>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-500">Active:</span>
+                <span className="rounded-md bg-violet-100 px-2 py-0.5 font-bold text-violet-800 border border-violet-200">
+                  {selectedCompany}
+                </span>
+                <span className="text-slate-500 ml-2">Role:</span>
+                <span className="rounded-md bg-indigo-100 px-2 py-0.5 font-bold text-indigo-800 border border-indigo-200">
+                  {effectiveRole}
+                </span>
+              </div>
+            </div>
+
+            {/* Dynamic Company Badges */}
+            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+              {companies.map((c) => (
                 <button
-                  key={comp}
+                  key={c.name}
                   type="button"
                   onClick={() => {
-                    setSelectedCompany(comp);
+                    setSelectedCompany(c.name);
                     setCompanyPage(1);
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    selectedCompany.toLowerCase() === comp.toLowerCase()
-                      ? 'bg-violet-700 text-white shadow-sm'
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                    selectedCompany.toLowerCase() === c.name.toLowerCase()
+                      ? 'bg-violet-700 text-white shadow-sm ring-1 ring-violet-700'
                       : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  {comp}
+                  <span>{c.name}</span>
+                  <span className={`text-[10px] rounded-full px-1.5 py-0.2 ${
+                    selectedCompany.toLowerCase() === c.name.toLowerCase() ? 'bg-violet-800 text-violet-100' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {c.question_count}
+                  </span>
                 </button>
               ))}
             </div>
+
+            {/* Custom Company Search & Set */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (customCompanyInput.trim()) {
+                  setSelectedCompany(customCompanyInput.trim());
+                  setCompanyPage(1);
+                  setCustomCompanyInput('');
+                }
+              }}
+              className="flex items-center gap-2 pt-2 border-t border-slate-100"
+            >
+              <input
+                value={customCompanyInput}
+                onChange={(e) => setCustomCompanyInput(e.target.value)}
+                placeholder="Or type any company (e.g. Adobe, Airbnb, Swiggy, Snowflake, Custom Startup)..."
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 flex-1"
+              />
+              <button
+                type="submit"
+                className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition shadow-sm shrink-0"
+              >
+                Set Target Company
+              </button>
+            </form>
           </div>
 
           {/* Canonical 5-Round Filter Pills */}
@@ -533,17 +703,10 @@ export function QuestionBankPage() {
               }}
               className="rounded-lg border px-3 py-2 text-sm"
             >
-              <option value="">All Categories & Topics</option>
-              <option value="Data Structures and Algorithms">Data Structures and Algorithms</option>
-              <option value="System Design">System Design & Architecture</option>
-              <option value="Trees and Graphs">Trees and Graphs</option>
-              <option value="Arrays and Strings">Arrays and Strings</option>
-              <option value="Dynamic Programming">Dynamic Programming</option>
-              <option value="Linked Lists">Linked Lists</option>
-              <option value="Operating Systems">Operating Systems</option>
-              <option value="Computer Networks">Computer Networks</option>
-              <option value="DBMS and SQL">DBMS and SQL</option>
-              <option value="HR and Behavioral">HR & Behavioral</option>
+              <option value="">All Categories & Topics ({availableCategories.length})</option>
+              {availableCategories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
             </select>
             <select
               value={companyDifficulty}
@@ -564,76 +727,205 @@ export function QuestionBankPage() {
           </form>
 
           {/* Intelligence Action & Customization Bar */}
-          <div className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50/70 to-indigo-50/50 p-4 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex-1 space-y-1">
+          <div className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50/70 to-indigo-50/50 p-4 shadow-sm space-y-3.5">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-violet-700" />
                   <span className="text-xs font-bold uppercase tracking-wider text-violet-900">
                     NVIDIA Nemotron Dynamic Dork Engine & Live Open-Web Scraper
                   </span>
                 </div>
-                <p className="text-xs text-slate-600">
-                  Dynamically generates noise-filtered round search dorks and synthesizes verified round-by-round interview problems for {selectedCompany}.
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                    <span>Experience:</span>
-                    <select
-                      value={targetYoE}
-                      onChange={(e) => setTargetYoE(parseFloat(e.target.value))}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                <span className="text-[11px] text-violet-700 font-semibold bg-violet-100/70 px-2 py-0.5 rounded-full">
+                  Parameter-Grounded Extraction
+                </span>
+              </div>
+              <p className="text-xs text-slate-600">
+                Dynamically generates noise-filtered round search dorks and executes live multi-platform extraction for <strong>{selectedCompany}</strong> ({effectiveRole}, {targetYoE} yrs).
+              </p>
+            </div>
+
+            {/* Row 1: Role, Seniority, and YoE Presets */}
+            <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-violet-100">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                <span className="font-semibold text-slate-800">Role:</span>
+                <select
+                  value={targetRole}
+                  onChange={(e) => handleRoleChange(e.target.value)}
+                  className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                >
+                  {availableRoles.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                  <option value="custom">-- Custom Role --</option>
+                </select>
+                {targetRole === 'custom' && (
+                  <input
+                    value={customRoleInput}
+                    onChange={(e) => {
+                      setCustomRoleInput(e.target.value);
+                      handleRoleChange('custom');
+                    }}
+                    placeholder="e.g. Senior Financial Analyst..."
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs w-44 focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                  />
+                )}
+              </label>
+
+              <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                <span className="font-semibold text-slate-800">Seniority & YoE:</span>
+                <div className="flex items-center gap-1">
+                  {[
+                    { label: 'Intern (0y)', val: 0.0 },
+                    { label: 'Entry (1.5y)', val: 1.5 },
+                    { label: 'Mid (3.5y)', val: 3.5 },
+                    { label: 'Senior (6y)', val: 6.0 },
+                    { label: 'Staff (9y+)', val: 9.0 },
+                  ].map((tier) => (
+                    <button
+                      key={tier.label}
+                      type="button"
+                      onClick={() => setTargetYoE(tier.val)}
+                      className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${
+                        targetYoE === tier.val
+                          ? 'bg-violet-700 text-white font-semibold shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
                     >
-                      <option value="1.5">Entry / SDE 1 (0-2y)</option>
-                      <option value="3.5">Mid / SDE 2 (3-5y)</option>
-                      <option value="7.0">Senior / L5+ (6-8y)</option>
-                      <option value="10.0">Staff / Principal (9y+)</option>
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                    <span>Target Skills:</span>
-                    <input
-                      value={targetSkills}
-                      onChange={(e) => setTargetSkills(e.target.value)}
-                      placeholder="e.g. Python, Distributed Systems, Concurrency, Algorithms"
-                      className="w-72 rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-                    />
-                  </label>
+                      {tier.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="30"
+                  value={targetYoE}
+                  onChange={(e) => setTargetYoE(parseFloat(e.target.value) || 0)}
+                  className="w-14 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-800 text-center"
+                />
+                <span className="text-slate-400 text-[10px]">yrs</span>
+              </div>
+            </div>
+
+            {/* Row 2: Target Skills */}
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700 w-full">
+                <span className="font-semibold text-slate-800 whitespace-nowrap">Target Skills:</span>
+                <input
+                  value={targetSkills}
+                  onChange={(e) => setTargetSkills(e.target.value)}
+                  placeholder="e.g. Financial Modeling, DCF, Variance Analysis or Python, Concurrency"
+                  className="w-full rounded border border-slate-300 bg-white px-2.5 py-1 text-xs focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                />
+              </label>
+            </div>
+
+            {/* Row 3: Scrape Filter Parameters (Round, Difficulty, Platform Sources, Scrape Depth) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-violet-100">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  <span className="font-semibold text-slate-800">Round Focus:</span>
+                  <select
+                    value={scrapeRound}
+                    onChange={(e) => setScrapeRound(e.target.value)}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                  >
+                    <option value="">All Rounds (Comprehensive 1-5)</option>
+                    <option value="1">Round 1: Screening & Foundations</option>
+                    <option value="2">Round 2: Core Domain & Problem Solving</option>
+                    <option value="3">Round 3: Applied Case Study / Machine Coding</option>
+                    <option value="4">Round 4: Architecture & Strategy</option>
+                    <option value="5">Round 5: Behavioral & Leadership</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  <span className="font-semibold text-slate-800">Difficulty:</span>
+                  <select
+                    value={scrapeDifficulty}
+                    onChange={(e) => setScrapeDifficulty(e.target.value)}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                  >
+                    <option value="">All Difficulties</option>
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  <span className="font-semibold text-slate-800">Limit:</span>
+                  <select
+                    value={scrapeLimit}
+                    onChange={(e) => setScrapeLimit(parseInt(e.target.value, 10))}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                  >
+                    <option value={15}>15 questions (Quick)</option>
+                    <option value={30}>30 questions (Standard)</option>
+                    <option value={50}>50 questions (Deep)</option>
+                  </select>
+                </label>
+
+                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  <span className="font-semibold text-slate-800">Sources:</span>
+                  {['LeetCode', 'GeeksforGeeks', 'Reddit', 'Open Web'].map((plat) => {
+                    const isSelected = scrapePlatforms.includes(plat);
+                    return (
+                      <button
+                        key={plat}
+                        type="button"
+                        onClick={() => togglePlatform(plat)}
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                          isSelected
+                            ? 'bg-violet-600 text-white shadow-xs'
+                            : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        {plat}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
+              {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => void handleGenerateNemotron()}
                   disabled={generatingNemotron}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-violet-800 disabled:opacity-50"
+                  title="Generate dynamic search dorks and synthesize questions across canonical rounds"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  <span>{generatingNemotron ? 'Analyzing & Synthesizing...' : '⚡ Generate Nemotron Dorks & Rounds'}</span>
+                  <span>{generatingNemotron ? 'Synthesizing...' : '⚡ Generate Nemotron Dorks & Rounds'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleLiveScrape()}
                   disabled={scrapingLive}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400 bg-white px-3 py-1.5 text-xs font-bold text-violet-800 shadow-sm hover:bg-violet-50 disabled:opacity-50 transition"
+                  title="Execute live parameter-driven web extraction tailored to these exact parameters"
                 >
-                  <Globe className="h-3.5 w-3.5 text-slate-500" />
-                  <span>{scrapingLive ? 'Scraping Open Web...' : '🌐 Actual Live Scrape'}</span>
+                  <Globe className="h-3.5 w-3.5 text-violet-700" />
+                  <span>{scrapingLive ? 'Scraping Sources...' : '🌐 Actual Live Scrape (Parameter-Driven)'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => exportCleanCsv()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  title="Export currently loaded questions as clean CSV"
                 >
                   <Download className="h-3.5 w-3.5 text-slate-500" />
-                  <span>📥 Export Clean CSV</span>
+                  <span>📥 Export CSV</span>
                 </button>
               </div>
             </div>
 
             {scrapeSuccessMsg && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800">
+              <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800 animate-fadeIn">
                 <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
                 <span>{scrapeSuccessMsg}</span>
               </div>

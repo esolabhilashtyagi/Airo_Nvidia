@@ -292,7 +292,8 @@ class LeetCodeCollector(BaseCollector):
 
         results = []
         try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            fast_timeout = httpx.Timeout(2.0, connect=0.8)
+            async with httpx.AsyncClient(timeout=fast_timeout, follow_redirects=True) as client:
                 resp = await client.post(graphql_url, json=payload, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()

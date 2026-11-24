@@ -53,7 +53,7 @@ def strip_question_wrappers(text: str) -> str:
     patterns = [
         r"^In an interview for.*?: \s*",
         r"^Company:.*?\nRole:.*?\nInterview Question:\s*",
-        r"^\[.*?(?:Technical Round|Round \d+|Interview).*?\]\s*",
+        r"^\[[^\]]+\]\s*:?\s*",
         r"^Round \d+:\s*(?:[^:\n]+:\s*)?",
         r"^(?:Topics|Java Core|Concurrency|Follow-up|Product Sense|Problem Statement|Problem|Question):\s*",
         r"^(?:I was asked(?:\s+to)?|The interviewer asked(?:\s+me)?(?:\s+to)?|Asked(?:\s+me)?(?:\s+to)?|They asked(?:\s+me)?(?:\s+to)?)\s*:?\s*",

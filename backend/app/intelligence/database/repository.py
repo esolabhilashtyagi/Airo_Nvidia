@@ -757,7 +757,11 @@ class DatabaseRepository:
         self.database_url = database_url or os.getenv(
             "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/interview_intelligence"
         )
-        db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "interview_intelligence.db")).replace("\\", "/")
+        data_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "interview_intelligence.db")).replace("\\", "/")
+        if os.path.exists(data_db_path) and os.path.getsize(data_db_path) > 0:
+            db_path = data_db_path
+        else:
+            db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "interview_intelligence.db")).replace("\\", "/")
         default_sqlite = f"sqlite:///{db_path}"
         self.sqlite_url = os.getenv("SQLITE_FALLBACK_URL", default_sqlite)
         self.engine, self.dialect_name = self._create_resilient_engine()
@@ -776,7 +780,7 @@ class DatabaseRepository:
 
         try:
             if self.database_url.startswith("postgresql"):
-                engine = create_engine(self.database_url, pool_pre_ping=True)
+                engine = create_engine(self.database_url, pool_pre_ping=True, connect_args={"connect_timeout": 1})
                 with engine.connect() as conn:
                     # Test connection
                     conn.execute(text("SELECT 1"))

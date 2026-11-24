@@ -270,7 +270,8 @@ class GFGCollector(BaseCollector):
         discovered_links: List[str] = []
 
         try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            fast_timeout = httpx.Timeout(2.0, connect=0.8)
+            async with httpx.AsyncClient(timeout=fast_timeout, follow_redirects=True) as client:
                 for target_url in urls_to_try:
                     try:
                         resp = await client.get(target_url, headers=headers)

@@ -319,7 +319,8 @@ class RedditCollector(BaseCollector):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=8.0, headers=headers, follow_redirects=True) as client:
+            fast_timeout = httpx.Timeout(2.0, connect=0.8)
+            async with httpx.AsyncClient(timeout=fast_timeout, headers=headers, follow_redirects=True) as client:
                 for sub in subreddits:
                     if len(results) >= limit:
                         break

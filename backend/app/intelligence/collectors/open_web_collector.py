@@ -7,6 +7,11 @@ and footers across any webpage layout), and prepares full article context for th
 
 import asyncio
 import os
+import sys
+_intel_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _intel_dir not in sys.path:
+    sys.path.insert(0, _intel_dir)
+
 import re
 import urllib.parse
 from typing import List, Dict, Any, Optional
@@ -14,11 +19,7 @@ from urllib.parse import urlparse
 import httpx
 from core.logging import logger
 
-try:
-    from curl_cffi.requests import AsyncSession as CurlAsyncSession
-    CURL_CFFI_AVAILABLE = True
-except ImportError:
-    CURL_CFFI_AVAILABLE = False
+CURL_CFFI_AVAILABLE = False
 
 import trafilatura
 
@@ -65,7 +66,8 @@ class OpenWebCollector:
         params = {"q": query, "format": "json", "pageno": page, "language": "en"}
 
         try:
-            resp = await client.get(self.searxng_url, params=params, timeout=8.0)
+            fast_timeout = httpx.Timeout(1.5, connect=0.5)
+            resp = await client.get(self.searxng_url, params=params, timeout=fast_timeout)
             if resp.status_code == 200:
                 data = resp.json()
                 urls = []
@@ -92,36 +94,58 @@ class OpenWebCollector:
         custom_query: Optional[str] = None,
     ) -> List[str]:
         """
-        Resilient zero-dependency fallback: queries DuckDuckGo HTML endpoint
+        Resilient zero-dependency fallback: queries DuckDuckGo HTML/Lite endpoint
         to discover authentic blog and forum posts when SearXNG is offline.
         """
         clean_comp = company.strip()
         clean_role = role.strip() if role and role.lower() not in ["all", "general", ""] else "Software Engineer"
-        query = custom_query or f'{clean_comp} {clean_role} interview experience was asked coding round'
+        raw_query = custom_query or f'{clean_comp} {clean_role} interview experience was asked coding round'
+        clean_q = re.sub(r'-(?:intitle|site):"[^"]+"', '', raw_query)
+        clean_q = re.sub(r'-(?:intitle|site):[^\s]+', '', clean_q)
+        clean_q = re.sub(r'\s+', ' ', clean_q).strip()
 
         urls = []
         try:
-            ddg_url = "https://html.duckduckgo.com/html/"
-            data = {"q": query, "s": str((page - 1) * 30)}
-            resp = await client.post(ddg_url, data=data, headers=self.headers, timeout=10.0)
+            fast_timeout = httpx.Timeout(2.0, connect=0.8)
+            # 1. Try DuckDuckGo Lite endpoint
+            lite_url = "https://lite.duckduckgo.com/lite/"
+            data = {"q": clean_q, "s": str((page - 1) * 30)}
+            resp = await client.post(lite_url, data=data, headers=self.headers, timeout=fast_timeout)
             if resp.status_code == 200:
                 raw_html = resp.text
-                found_links = re.findall(r'class="result__url"[^>]*href="([^"]+)"', raw_html)
+                found_links = re.findall(r'href="([^"]+)"\s+class="result-link"', raw_html)
                 if not found_links:
                     found_links = re.findall(r'uddg=([^&"\']+)', raw_html)
                     found_links = [urllib.parse.unquote(l) for l in found_links]
 
                 for link in found_links:
-                    if link.startswith("//"):
-                        link = "https:" + link
-                    if not link.startswith("http"):
-                        continue
+                    if link.startswith("//"): link = "https:" + link
+                    if not link.startswith("http"): continue
                     domain = urlparse(link).netloc.lower()
                     if domain in BLOCKED_DOMAINS or any(b in domain for b in ["duckduckgo", "google", "bing"]):
                         continue
                     urls.append(link)
+
+            # 2. If lite returned empty, try html endpoint
+            if not urls:
+                ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(clean_q)}"
+                resp2 = await client.get(ddg_url, headers=self.headers, timeout=fast_timeout)
+                if resp2.status_code == 200:
+                    raw_html = resp2.text
+                    found_links = re.findall(r'class="result__url"[^>]*href="([^"]+)"', raw_html)
+                    if not found_links:
+                        found_links = re.findall(r'uddg=([^&"\']+)', raw_html)
+                        found_links = [urllib.parse.unquote(l) for l in found_links]
+
+                    for link in found_links:
+                        if link.startswith("//"): link = "https:" + link
+                        if not link.startswith("http"): continue
+                        domain = urlparse(link).netloc.lower()
+                        if domain in BLOCKED_DOMAINS or any(b in domain for b in ["duckduckgo", "google", "bing"]):
+                            continue
+                        urls.append(link)
         except Exception as e:
-            logger.warning(f"DuckDuckGo fallback search encountered: {e}")
+            logger.debug(f"DuckDuckGo search fallback notice: {e}")
 
         return list(dict.fromkeys(urls))
 
@@ -139,10 +163,14 @@ class OpenWebCollector:
         Discovers URLs using dynamic Nemotron-generated domain dorks across SearXNG
         and DuckDuckGo, adapting to the target company, role, YoE, skills, and specific round.
         """
-        from models.model_manager import get_model_manager
-        mm = get_model_manager()
-        dorks_data = await mm.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
-        round_dorks = dorks_data.get("round_dorks", {})
+        round_dorks = {}
+        try:
+            from models.model_manager import get_model_manager
+            mm = get_model_manager()
+            dorks_data = await mm.generate_domain_dorks(company=company, role=role, yoe=yoe, skills=skills)
+            round_dorks = dorks_data.get("round_dorks", {})
+        except Exception:
+            round_dorks = {}
 
         queries_to_try = []
         if round_number:
@@ -204,6 +232,9 @@ class OpenWebCollector:
         role: str = "Software Engineer",
         page: int = 1,
         max_articles: int = 10,
+        yoe: float = 3.5,
+        skills: Optional[List[str]] = None,
+        round_number: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Coordinates full open-web discovery and universal body extraction.
@@ -214,7 +245,7 @@ class OpenWebCollector:
         if CURL_CFFI_AVAILABLE:
             try:
                 async with CurlAsyncSession(impersonate="chrome124") as session:
-                    urls = await self.discover_urls(session, company, role, page=page)
+                    urls = await self.discover_urls(session, company, role, page=page, yoe=yoe, skills=skills, round_number=round_number)
                     tasks = [self.fetch_and_extract_article(session, u) for u in urls[:max_articles]]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     for r in results:
@@ -228,7 +259,7 @@ class OpenWebCollector:
 
         # Resilient httpx client fallback
         async with httpx.AsyncClient(headers=self.headers, timeout=12.0) as client:
-            urls = await self.discover_urls(client, company, role, page=page)
+            urls = await self.discover_urls(client, company, role, page=page, yoe=yoe, skills=skills, round_number=round_number)
             tasks = [self.fetch_and_extract_article(client, u) for u in urls[:max_articles]]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
