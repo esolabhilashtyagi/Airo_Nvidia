@@ -11,12 +11,19 @@ import html
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from bs4 import BeautifulSoup
+
 from database.repository import get_db_repository
 from models.model_manager import get_model_manager
-from models.fallback_models import FallbackNLPModel, strip_question_wrappers, get_dedup_hash, CANONICAL_CATEGORIES
+from models.fallback_models import (
+    FallbackNLPModel,
+    strip_question_wrappers,
+    canonicalize_text,
+    get_dedup_hash,
+    CANONICAL_CATEGORIES,
+)
 from core.logging import logger
 
-# Curated list of high-value public tech companies to cycle through
 TECH_GIANTS_AND_STARTUPS = [
     "Google", "Amazon", "Meta", "NVIDIA", "Microsoft", "Apple", "Netflix", "Uber",
     "Stripe", "Databricks", "OpenAI", "Figma", "Snowflake", "Airbnb", "DoorDash",
@@ -25,11 +32,10 @@ TECH_GIANTS_AND_STARTUPS = [
     "Snap", "Pinterest", "Zoom", "Square", "GitHub", "GitLab", "Docker", "Twilio"
 ]
 
-# GitHub Open-Source Curated Interview Archives (Raw Markdown endpoints, 100% Free & Authentic)
 GITHUB_ARCHIVES = [
     {
         "url": "https://raw.githubusercontent.com/donnemartin/system-design-primer/master/README.md",
-        "archive_domain": "System Architecture & Design",
+        "archive_domain": "System Design Architecture",
         "category": "System Design",
         "platform": "System Design Primer Archive",
     },
@@ -41,7 +47,7 @@ GITHUB_ARCHIVES = [
     },
     {
         "url": "https://raw.githubusercontent.com/bregman-arie/devops-exercises/master/topics/linux/README.md",
-        "archive_domain": "Systems & Linux Kernel",
+        "archive_domain": "Linux Kernel & Systems Engineering",
         "category": "Operating Systems",
         "platform": "DevOps & Systems Exercises Archive",
     },
@@ -59,6 +65,7 @@ GITHUB_ARCHIVES = [
     },
 ]
 
+# Patterns for automatic hard REJECT (blog headlines, forum debates, rants, meta-questions)
 GARBAGE_PATTERNS = [
     r"^>\s*",
     r"^&gt;\s*",
@@ -86,6 +93,31 @@ GARBAGE_PATTERNS = [
     r"^what about\??$",
     r"^any thoughts\??$",
     r"^can you explain\??$",
+    r"^how many golf balls can fit",
+    r"fun brain teasers",
+    r"top \d+",
+    r"answers to \d+",
+    r"\d+ .* interview questions",
+    r"acing the .* interview",
+    r"^looking for resources to help",
+    r"^practice by solving",
+    r"^\*?\s*\[.*\]\(#",
+    r"^###\s+Step",
+    r"what each of the following commands does",
+    r"what the following commands do",
+    r"what are hidden files",
+    r"what is the difference between these two commands",
+    r"what is escaping",
+    r"what is sudo",
+    r"what is a swap partition",
+    r"true or false\?",
+    r"in linux fhs",
+]
+
+# Domains that publish blog articles rather than raw interview question threads
+BLOG_DOMAINS = [
+    "medium.com", "businessinsider.com", "qz.com", "blogspot.com",
+    "impactinterview.com", "wordpress.com", "alexgolec.dev", "javarevisited"
 ]
 
 
@@ -99,19 +131,31 @@ class LiveWebScraper:
             "Accept": "application/json, text/plain, text/markdown, */*",
         }
 
-    def _clean_html(self, raw_html: str) -> str:
-        """Strips HTML tags, summary/details markers, code formatting, and markdown artifacts."""
-        if not raw_html:
+    def _clean_html_and_markdown(self, raw_text: str) -> str:
+        """
+        Strips HTML tags via BeautifulSoup, removes markdown table of contents links,
+        markdown images, code backticks, and collapses whitespace.
+        """
+        if not raw_text:
             return ""
-        # Strip details / summary wrappers specifically
-        clean = re.sub(r"</?(?:details|summary|code|b|i|strong|em|br|p|div|span|table|tr|td|th|ul|li|ol|h[1-6]|a|img)[^>]*>", " ", raw_html, flags=re.IGNORECASE)
-        # Strip any other remaining tags
-        clean = re.sub(r"<[^>]+?>", " ", clean)
+
+        # First pass: parse with BeautifulSoup to clean markup, details/summary, etc.
+        try:
+            soup = BeautifulSoup(raw_text, "html.parser")
+            # Decompose tags that are purely decorative or structural noise
+            for tag in soup(["script", "style", "img", "svg"]):
+                tag.decompose()
+            clean = soup.get_text(" ", strip=True)
+        except Exception:
+            clean = re.sub(r"<[^>]+?>", " ", raw_text)
+
         clean = html.unescape(clean)
         # Strip markdown links [text](url) -> text
         clean = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", clean)
         # Strip markdown images ![alt](url)
         clean = re.sub(r"!\[[^\]]*\]\([^\)]+\)", " ", clean)
+        # Strip markdown anchor links [text](#anchor)
+        clean = re.sub(r"\[([^\]]+)\]\(#[^\)]+\)", r"\1", clean)
         # Strip code backticks
         clean = re.sub(r"`{1,3}", "", clean)
         # Collapse whitespace
@@ -157,12 +201,15 @@ class LiveWebScraper:
         return "Software Development Engineer II"
 
     def _is_valid_technical_question(self, text: str) -> bool:
-        """Strictly validates whether candidate text is an actual technical question/prompt."""
+        """Strictly validates whether candidate text is an actual technical interview question."""
         t = text.strip()
-        if len(t) < 25 or len(t) > 600:
+        # Drop fragments under 8 words (or fewer than 35 characters)
+        words = t.split()
+        if len(words) < 8 or len(t) < 35 or len(t) > 700:
             return False
 
         t_low = t.lower()
+
         # Reject conversational garbage, forum rants, and article titles
         for pat in GARBAGE_PATTERNS:
             if re.search(pat, t_low):
@@ -173,7 +220,7 @@ class LiveWebScraper:
             "given ", "implement ", "design ", "explain ", "how do you ", "how would you ",
             "write a ", "find the ", "what is the ", "describe a ", "suppose you have ",
             "you are given ", "create a ", "calculate ", "reverse ", "solve ", "construct ",
-            "can you ", "why does ", "optimize "
+            "can you ", "why does ", "optimize ", "walk through ", "compare "
         ]
         has_action = any(t_low.startswith(p) or f" {p}" in t_low for p in action_verbs)
         has_qmark = t.endswith("?")
@@ -182,7 +229,8 @@ class LiveWebScraper:
         tech_words = [
             "array", "tree", "graph", "cache", "string", "query", "sql", "thread", "lock",
             "concurrency", "database", "latency", "system", "service", "algorithm", "dp",
-            "heap", "queue", "stack", "list", "memory", "server", "metric", "network", "socket"
+            "heap", "queue", "stack", "list", "memory", "server", "metric", "network", "socket",
+            "sharding", "kafka", "redis", "transaction", "index", "raft", "paxos"
         ]
         has_tech = any(w in t_low for w in tech_words)
 
@@ -194,8 +242,7 @@ class LiveWebScraper:
         if not text:
             return questions
 
-        # Clean raw html/markdown noise first
-        clean_text = self._clean_html(text)
+        clean_text = self._clean_html_and_markdown(text)
 
         # Split into sentences or lines
         sentences = re.split(r"(?<=[.!?\n])\s+", clean_text)
@@ -205,7 +252,6 @@ class LiveWebScraper:
             if not s_clean:
                 continue
 
-            # Skip quotes
             if s_clean.startswith(">") or s_clean.startswith("&gt;"):
                 continue
 
@@ -275,10 +321,16 @@ class LiveWebScraper:
                             if not hits:
                                 break
                             for h in hits:
-                                raw_body = h.get("comment_text") or h.get("story_text") or ""
-                                clean_body = self._clean_html(raw_body)
+                                raw_body = h.get("comment_text") or ""
+                                clean_body = self._clean_html_and_markdown(raw_body)
                                 if len(clean_body) >= 50:
                                     post_id = h.get("objectID")
+                                    story_url = h.get("story_url") or ""
+
+                                    # Reject blog post discussions
+                                    if any(bd in story_url.lower() for bd in BLOG_DOMAINS):
+                                        continue
+
                                     hit_url = f"https://news.ycombinator.com/item?id={post_id}"
                                     extracted_raw_records.append({
                                         "title": f"{comp_target} Technical Discussion",
@@ -324,9 +376,12 @@ class LiveWebScraper:
 
                 cls = self.nlp.classify_question(q_text)
 
-                # Strict metadata attribution (Prevent blind company & role hallucination)
+                # Strict metadata attribution: NEVER stamp target company onto generic GitHub archives!
                 if rec.get("is_archive"):
-                    assigned_company = comp_target if is_all else (comp_target if comp_target.lower() in q_text.lower() else rec.get("archive_domain", "Core Systems & Algorithms"))
+                    if not is_all and comp_target.lower() in q_text.lower():
+                        assigned_company = comp_target
+                    else:
+                        assigned_company = rec.get("archive_domain", "Core Systems & Algorithms")
                 else:
                     assigned_company = rec.get("explicit_company") or (comp_target if comp_target.lower() in q_text.lower() else "Core Technical Practice")
 

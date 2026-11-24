@@ -7,6 +7,10 @@ from agents.enrichment_agent import DataEnrichmentAgent
 from agents.verification_agent import AuthenticityVerificationAgent
 from agents.coding_extraction_agent import CodingProblemExtractionAgent
 from agents.quality_agent import QualityAssuranceAgent
+from agents.deduplication_agent import DeduplicationAgent
+from agents.classification_agent import QuestionClassificationAgent
+from models.fallback_models import canonicalize_text, CANONICAL_CATEGORIES
+from database.repository import get_db_repository
 
 
 def test_enrichment_agent_canonicalization():
@@ -58,3 +62,46 @@ def test_quality_assurance_agent():
 
     invalid_doc = {"source_platform": "Reddit"}
     assert qa.validate_raw_document(invalid_doc) is False
+
+
+def test_deduplication_canonical_numeric_masking():
+    """Verifies that combinatorial number-swapping collapses into identical canonical form."""
+    q1 = "Given a stream of incoming HTTP requests, throttle users exceeding 100 requests in 1 second."
+    q2 = "In an interview for SDE at Google: Given a stream of incoming HTTP requests, throttle users exceeding 50,000 requests in 60 seconds."
+    c1 = canonicalize_text(q1)
+    c2 = canonicalize_text(q2)
+    assert "<num>" in c1
+    assert "<num>" in c2
+    assert c1 == c2, f"Expected canonicalized questions to match, got: {c1} vs {c2}"
+
+
+@pytest.mark.asyncio
+async def test_classification_canonical_categories():
+    """Verifies that classification outputs are strictly within CANONICAL_CATEGORIES and reject '* Domain'."""
+    classifier = QuestionClassificationAgent()
+    questions = [
+        "Given an array of integers, find the maximum subarray sum in O(N).",
+        "Design a distributed rate limiter supporting 500k requests/second.",
+        "Implement a thread-safe LRU cache with O(1) read and write operations.",
+        "Trapping Rain Water: calculate how much water can be trapped after raining.",
+    ]
+    for q in questions:
+        res = await classifier.classify_question(q)
+        cat = res["category"]
+        assert cat in CANONICAL_CATEGORIES, f"Category '{cat}' is not canonical!"
+        assert "Domain" not in cat, f"Detected '* Domain' bug in category: {cat}"
+
+
+def test_repository_company_isolation():
+    """Verifies that searching for a company (Atlassian) returns strictly Atlassian questions without company leakage."""
+    db = get_db_repository()
+    qs = db.get_maximum_relevant_questions(
+        company="Atlassian",
+        role="Software Development Engineer",
+        yoe=4.0,
+        skills=["Java", "Distributed Systems"],
+        limit=20,
+    )
+    assert len(qs) > 0, "Expected Atlassian questions to be returned"
+    for q in qs:
+        assert q.company_name == "Atlassian", f"Company leakage detected: {q.company_name} in Atlassian search!"

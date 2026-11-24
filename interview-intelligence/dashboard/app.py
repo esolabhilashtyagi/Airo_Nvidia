@@ -698,6 +698,7 @@ elif menu == "🔍 Question Explorer & Search":
         st.subheader(f"Vector Similarity Results for: '{search_query}'")
         results = db.search_similar_questions(
             query_vector=mm.generate_embedding(search_query),
+            company=company_filter if company_filter else None,
             limit=15,
             min_similarity=0.25,
         )

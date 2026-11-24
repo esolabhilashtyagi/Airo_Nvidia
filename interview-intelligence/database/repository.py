@@ -1159,11 +1159,13 @@ class DatabaseRepository:
         difficulty: Optional[str] = None,
         round_number: Optional[int] = None,
         limit: int = 500,
+        include_similar_companies: bool = False,
     ) -> List[InterviewQuestion]:
         """
         Retrieves the maximum possible volume of questions, intelligently ranked by
         composite relevance across Company, Role family, YoE seniority tier, and Skills.
-        Ensures high recall without artificial drop-off.
+        Strictly enforces company boundaries when a target company is specified unless
+        include_similar_companies is explicitly enabled.
         """
         clean_company = (company or "").strip()
         is_all_company = not clean_company or clean_company.lower() in ["all", "all companies", "all mncs", "all startups"]
@@ -1178,33 +1180,49 @@ class DatabaseRepository:
             if difficulty and difficulty != "All":
                 stmt = stmt.filter(InterviewQuestion.difficulty.ilike(difficulty))
 
-            # 1. Fetch company candidates
-            company_candidates = []
+            # 1. Fetch candidates respecting target company boundary
             if not is_all_company:
-                comp_stmt = stmt.filter(InterviewQuestion.company_name.ilike(f"%{clean_company}%")).limit(1000)
-                company_candidates = session.scalars(comp_stmt).unique().all()
+                comp_stmt = stmt.filter(InterviewQuestion.company_name.ilike(f"%{clean_company}%")).limit(limit * 2)
+                candidates = session.scalars(comp_stmt).unique().all()
+                # Only if explicitly requested and fewer candidates than limit, expand to peers in the same tier
+                if include_similar_companies and len(candidates) < limit:
+                    c_tier = self.classify_company_tier(clean_company)
+                    peer_stmt = stmt.limit(limit)
+                    peer_all = session.scalars(peer_stmt).unique().all()
+                    peer_candidates = [p for p in peer_all if self.classify_company_tier(p.company_name) == c_tier]
+                    combined_map = {q.id: q for q in (candidates + peer_candidates)}
+                else:
+                    combined_map = {q.id: q for q in candidates}
+            else:
+                pool_stmt = stmt.limit(limit * 4)
+                pool_candidates = session.scalars(pool_stmt).unique().all()
+                combined_map = {q.id: q for q in pool_candidates}
 
-            # 2. Fetch role and skill candidates across platform
-            pool_stmt = stmt.limit(2000)
-            pool_candidates = session.scalars(pool_stmt).unique().all()
-
-            combined_map = {q.id: q for q in (company_candidates + pool_candidates)}
-
-            # 3. Score each question
+            # 2. Score each candidate question
             scored = []
             for q_id, q in combined_map.items():
                 score = 0
                 reasons = []
 
                 # Company Match (+60 pts)
-                if not is_all_company and clean_company.lower() in (q.company_name or "").lower():
+                is_exact_comp = not is_all_company and clean_company.lower() in (q.company_name or "").lower()
+                if is_exact_comp:
                     score += 60
                     reasons.append("Exact Company")
 
-                # Role Match (+40 pts)
+                # Role Match (+40 pts) and Role Incompatibility Filter
                 if not is_all_role:
                     r_low = clean_role.lower()
                     q_role_low = (q.job_role or "").lower()
+                    q_cat_low = (q.question_category or "").lower()
+
+                    # Check for fundamental role clash (e.g. SDE vs Sales vs Product Management)
+                    is_tech_role = any(k in r_low for k in ["engineer", "sde", "developer", "backend", "frontend", "systems", "cuda", "ml", "ai"])
+                    is_pm_question = "product" in q_role_low or q_cat_low == "product management"
+                    is_sales_question = "sales" in q_role_low or "finance" in q_role_low
+                    if is_tech_role and (is_pm_question or is_sales_question):
+                        continue
+
                     if r_low in q_role_low:
                         score += 40
                         reasons.append("Role Match")
@@ -1234,8 +1252,8 @@ class DatabaseRepository:
                     score += 20
 
                 # Base score for matching company
-                if not is_all_company and clean_company.lower() in (q.company_name or "").lower():
-                    score = max(score, 50)
+                if is_exact_comp:
+                    score = max(score, 60)
 
                 q.relevance_score = score
                 q.relevance_reasons = reasons
@@ -1272,35 +1290,52 @@ class DatabaseRepository:
             session.commit()
 
     def search_similar_questions(
-        self, query_vector: List[float], limit: int = 10, min_similarity: float = 0.65
+        self,
+        query_vector: List[float],
+        company: Optional[str] = None,
+        role: Optional[str] = None,
+        limit: int = 10,
+        min_similarity: float = 0.65,
     ) -> List[Tuple[InterviewQuestion, float]]:
         """
         Calculates cosine similarity:
         - If PostgreSQL with pgvector, executes pgvector `<=>` cosine distance query.
         - If SQLite, computes in-memory dot product cosine similarity across cached vectors.
+        Enforces company and role boundaries when filters are specified.
         """
         results = []
+        clean_company = (company or "").strip()
+        is_all_company = not clean_company or clean_company.lower() in ["all", "all companies", "all mncs", "all startups"]
+        clean_role = (role or "").strip()
+        is_all_role = not clean_role or clean_role.lower() in ["all", "all roles", "any"]
+
         with self.get_session() as session:
             if self.dialect_name == "postgresql":
                 try:
-                    stmt = text(
-                        """
+                    where_clauses = ["1=1"]
+                    params = {"query_vector": str(query_vector), "limit": limit * 2}
+                    if not is_all_company:
+                        where_clauses.append("LOWER(q.company_name) LIKE :company")
+                        params["company"] = f"%{clean_company.lower()}%"
+                    if not is_all_role:
+                        where_clauses.append("LOWER(q.job_role) LIKE :role")
+                        params["role"] = f"%{clean_role.lower()}%"
+
+                    stmt_str = f"""
                         SELECT q.id, 1 - (e.embedding_vector <=> :query_vector) AS similarity
                         FROM interview_questions q
                         JOIN embeddings e ON q.id = e.question_id
+                        WHERE {' AND '.join(where_clauses)}
                         ORDER BY similarity DESC
                         LIMIT :limit;
-                        """
-                    )
-                    rows = session.execute(
-                        stmt, {"query_vector": str(query_vector), "limit": limit}
-                    ).fetchall()
+                    """
+                    rows = session.execute(text(stmt_str), params).fetchall()
                     for q_id, sim in rows:
                         if sim >= min_similarity:
                             q = session.query(InterviewQuestion).filter(InterviewQuestion.id == q_id).first()
                             if q:
                                 results.append((q, float(sim)))
-                    return results
+                    return results[:limit]
                 except Exception as e:
                     logger.warning(f"pgvector query failed, falling back to local similarity: {e}")
 
@@ -1310,7 +1345,6 @@ class DatabaseRepository:
             for emb in all_embeddings:
                 vec = emb.embedding_vector
                 if isinstance(vec, list) and len(vec) == len(query_vector):
-                    # compute cosine similarity
                     dot = sum(a * b for a, b in zip(query_vector, vec))
                     norm_a = sum(a * a for a in query_vector) ** 0.5
                     norm_b = sum(b * b for b in vec) ** 0.5
@@ -1320,10 +1354,17 @@ class DatabaseRepository:
                             scored.append((emb.question_id, sim))
 
             scored.sort(key=lambda x: x[1], reverse=True)
-            for q_id, sim in scored[:limit]:
+            for q_id, sim in scored:
                 q = session.query(InterviewQuestion).filter(InterviewQuestion.id == q_id).first()
-                if q:
-                    results.append((q, float(sim)))
+                if not q:
+                    continue
+                if not is_all_company and clean_company.lower() not in (q.company_name or "").lower():
+                    continue
+                if not is_all_role and clean_role.lower() not in (q.job_role or "").lower():
+                    continue
+                results.append((q, float(sim)))
+                if len(results) >= limit:
+                    break
 
         return results
 

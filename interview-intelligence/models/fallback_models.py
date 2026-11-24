@@ -78,7 +78,7 @@ def canonicalize_text(text: str) -> str:
     """
     cleaned = strip_question_wrappers(text)
     # Mask numbers with units (e.g. 50M, 1B, 2,000, 10000, 15ms, 10s, 64)
-    normalized = re.sub(r"\b\d+(?:[.,]\d+)*(?:\s*(?:k|m|b|ms|s|sec|seconds|gb|tb|qps|tps|req/s))?\b", "<NUM>", cleaned, flags=re.IGNORECASE)
+    normalized = re.sub(r"\b\d+(?:[.,]\d+)*(?:\s*(?:k|m|b|ms|s|sec|secs|second|seconds|gb|tb|qps|tps|req/s))?\b", "<NUM>", cleaned, flags=re.IGNORECASE)
     # Strip punctuation and collapse whitespace
     normalized = re.sub(r"[^\w\s<>]", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip().lower()
