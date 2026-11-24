@@ -3,10 +3,10 @@ API Router for Company Interview Intelligence in AAIROEdu_Platform.
 Exposes endpoints for authentic company questions, 5-round hiring blueprints, and candidate practice.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional, Union
 from fastapi import APIRouter, Depends, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, security_bearer
@@ -46,16 +46,40 @@ class PracticeAnswerRequest(BaseModel):
 class GenerateDorksRequest(BaseModel):
     company: str = "Google"
     role: str = "Software Development Engineer"
-    yoe: float = 3.5
+    yoe: Union[float, str] = 3.5
     skills: List[str] = Field(default_factory=list)
+
+    @field_validator("yoe", mode="before")
+    @classmethod
+    def parse_yoe(cls, v: Any) -> float:
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            import re
+            m = re.search(r"\d+(\.\d+)?", v)
+            if m:
+                return float(m.group(0))
+        return 3.5
 
 
 class RoundQuestionsRequest(BaseModel):
     company: str = "Google"
     role: str = "Software Development Engineer"
-    yoe: float = 3.5
+    yoe: Union[float, str] = 3.5
     round_number: Optional[int] = None
     skills: List[str] = Field(default_factory=list)
+
+    @field_validator("yoe", mode="before")
+    @classmethod
+    def parse_yoe(cls, v: Any) -> float:
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            import re
+            m = re.search(r"\d+(\.\d+)?", v)
+            if m:
+                return float(m.group(0))
+        return 3.5
 
 
 class LiveScrapeRequest(BaseModel):

@@ -41,7 +41,14 @@ def is_database_unavailable(error: BaseException) -> bool:
         errno.ENETUNREACH, errno.ECONNRESET, errno.EPIPE,
     }
     for item in exception_chain(error):
+        err_msg = str(item).lower()
+        if "no such table" in err_msg or "no such column" in err_msg:
+            return False
         if isinstance(item, (OperationalError, InterfaceError)):
+            if any(marker in err_msg for marker in ("connection", "connect", "timeout", "refused", "unreachable", "closed")):
+                return True
+            if "sqlite" in err_msg and not any(marker in err_msg for marker in ("locked", "busy", "unable to open")):
+                return False
             return True
         if isinstance(item, DBAPIError) and item.connection_invalidated:
             return True
@@ -49,8 +56,8 @@ def is_database_unavailable(error: BaseException) -> bool:
             return True
         if isinstance(item, OSError) and (
             item.errno in connection_errnos
-            or "connect call failed" in str(item).lower()
-            or "connection refused" in str(item).lower()
+            or "connect call failed" in err_msg
+            or "connection refused" in err_msg
         ):
             return True
         # Drivers can expose connection failures through their own exception
@@ -72,6 +79,10 @@ def database_error_response_code(error: BaseException) -> str | None:
         return "DATABASE_AUTHENTICATION_FAILED"
     if sqlstate == "3D000":
         return "DATABASE_NOT_FOUND"
+    for item in exception_chain(error):
+        msg = str(item).lower()
+        if "no such table" in msg or "no such column" in msg:
+            return "DATABASE_SCHEMA_MISMATCH"
     if is_database_unavailable(error):
         return "DATABASE_UNAVAILABLE"
     return None

@@ -1,9 +1,29 @@
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 from sqlalchemy import create_engine
+from sqlalchemy.dialects.sqlite.base import DATETIME
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
+
+# Ensure SQLite DateTime results retain timezone information (UTC)
+_orig_sqlite_dt_result_processor = DATETIME.result_processor
+
+
+def _utc_sqlite_dt_result_processor(self, dialect, coltype):
+    fn = _orig_sqlite_dt_result_processor(self, dialect, coltype)
+
+    def process(value):
+        res = fn(value) if fn else value
+        if res is not None and getattr(res, "tzinfo", None) is None:
+            return res.replace(tzinfo=timezone.utc)
+        return res
+
+    return process
+
+
+DATETIME.result_processor = _utc_sqlite_dt_result_processor
 
 # Async engine for FastAPI endpoints
 async_kwargs = {

@@ -16,7 +16,14 @@ def resolve_and_validate_test_database(
     database_name = url.database
     if not database_name:
         raise ValueError("Test database URL has no database name; refusing to run pytest")
-    if database_name.endswith("_pytest") or database_name == explicit_allowed:
+    db_base = database_name.replace("\\", "/").split("/")[-1]
+    if (
+        database_name.endswith("_pytest")
+        or db_base.endswith("_pytest")
+        or db_base.endswith("_pytest.db")
+        or database_name == explicit_allowed
+        or db_base == explicit_allowed
+    ):
         return database_name
 
     redacted_url = url.render_as_string(hide_password=True)

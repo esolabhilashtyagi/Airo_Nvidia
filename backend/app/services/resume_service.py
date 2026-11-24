@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pypdf import PdfReader
 from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -162,7 +163,10 @@ class ResumeService:
         now = datetime.now(timezone.utc)
         window_end = now + timedelta(seconds=window_seconds)
         table = ResumeRateLimit.__table__
-        statement = pg_insert(ResumeRateLimit).values(
+        bind = db.get_bind() if hasattr(db, "get_bind") else db.bind
+        is_sqlite = getattr(getattr(bind, "dialect", None), "name", "") == "sqlite"
+        insert_fn = sqlite_insert if is_sqlite else pg_insert
+        statement = insert_fn(ResumeRateLimit).values(
             candidate_profile_id=candidate_profile_id,
             operation=operation,
             request_count=1,

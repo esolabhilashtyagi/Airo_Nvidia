@@ -70,8 +70,8 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "aairo_user"
     POSTGRES_PASSWORD: str = "aairo_secure_password"
     POSTGRES_DB: str = "aairo_db"
-    DATABASE_URL: str = "postgresql+asyncpg://aairo_user:aairo_secure_password@localhost:5432/aairo_db"
-    DATABASE_URL_SYNC: str = "postgresql://aairo_user:aairo_secure_password@localhost:5432/aairo_db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///app.db"
+    DATABASE_URL_SYNC: str = "sqlite:///app.db"
 
     # File Storage
     UPLOAD_DIR: str = "./uploads"
@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     def normalize_database_url(cls, value: str) -> str:
         url = str(value).strip()
         if url.startswith("sqlite"):
+            if "///" in url and not url.startswith("sqlite+aiosqlite:////") and not url.startswith("sqlite:////") and ":" not in url.split("///")[1]:
+                rel_path = url.split("///")[1]
+                abs_path = (Path(__file__).resolve().parent.parent.parent / rel_path).resolve().as_posix()
+                prefix = "sqlite+aiosqlite:///" if "aiosqlite" in url else "sqlite:///"
+                return f"{prefix}{abs_path}"
             return url
         if url.startswith("postgres://"):
             url = "postgresql+asyncpg://" + url[len("postgres://"):]
@@ -119,6 +124,10 @@ class Settings(BaseSettings):
     def normalize_database_url_sync(cls, value: str) -> str:
         url = str(value).strip()
         if url.startswith("sqlite"):
+            if "///" in url and not url.startswith("sqlite:////") and ":" not in url.split("///")[1]:
+                rel_path = url.split("///")[1]
+                abs_path = (Path(__file__).resolve().parent.parent.parent / rel_path).resolve().as_posix()
+                return f"sqlite:///{abs_path}"
             return url
         if url.startswith("postgres://"):
             url = "postgresql://" + url[len("postgres://"):]

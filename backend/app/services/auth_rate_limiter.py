@@ -3,14 +3,24 @@ import hmac
 import math
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import case, delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.system import AuthAttemptLimit
+
+
+def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class AuthRateLimiter:
@@ -52,10 +62,12 @@ class AuthRateLimiter:
             ).with_for_update())
             if not row:
                 continue
-            if row.locked_until and row.locked_until > now:
-                retry_after = max(retry_after, math.ceil((row.locked_until - now).total_seconds()))
+            locked_until = _as_utc(row.locked_until)
+            window_started_at = _as_utc(row.window_started_at)
+            if locked_until and locked_until > now:
+                retry_after = max(retry_after, math.ceil((locked_until - now).total_seconds()))
                 continue
-            if row.window_started_at <= reset_before or (row.locked_until and row.locked_until <= now):
+            if (window_started_at and window_started_at <= reset_before) or (locked_until and locked_until <= now):
                 row.failed_attempts = 0
                 row.window_started_at = now
                 row.locked_until = None
@@ -79,6 +91,10 @@ class AuthRateLimiter:
         limit = cls._limit(endpoint)
         lock_until = now + timedelta(seconds=settings.AUTH_LOCKOUT_SECONDS)
 
+        bind = db.get_bind() if hasattr(db, "get_bind") else db.bind
+        is_sqlite = getattr(getattr(bind, "dialect", None), "name", "") == "sqlite"
+        insert_fn = sqlite_insert if is_sqlite else pg_insert
+
         for scope, key_hash in cls._keys(email, client_ip):
             expired = or_(
                 AuthAttemptLimit.window_started_at <= reset_before,
@@ -88,7 +104,7 @@ class AuthRateLimiter:
                 (expired, 1),
                 else_=AuthAttemptLimit.failed_attempts + 1,
             )
-            statement = pg_insert(AuthAttemptLimit).values(
+            statement = insert_fn(AuthAttemptLimit).values(
                 id=uuid.uuid4(),
                 endpoint=endpoint,
                 scope=scope,

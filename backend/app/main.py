@@ -48,6 +48,15 @@ def _database_error_message(error_code: str) -> str:
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Candidate Dashboard AAIRO backend...")
     logger.info(f"Environment: {settings.ENVIRONMENT} | Debug: {settings.DEBUG}")
+    if "sqlite" in settings.DATABASE_URL:
+        try:
+            import app.models
+            from app.models.base import Base
+            from app.core.database import sync_engine
+            Base.metadata.create_all(bind=sync_engine)
+            logger.info("✅ SQLite tables verified/created.")
+        except Exception as e:
+            logger.warning(f"Auto-table creation notice: {e}")
     yield
     logger.info("🛑 Shutting down Candidate Dashboard AAIRO backend...")
 
