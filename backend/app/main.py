@@ -88,11 +88,16 @@ async def add_process_time_and_request_id(request: Request, call_next):
     
     try:
         response = await call_next(request)
+    except HTTPException as exc:
+        response = await http_exception_handler(request, exc)
     except Exception as exc:
         # BaseHTTPMiddleware can wrap endpoint exceptions in ExceptionGroup.
         # Handle here as well as in the registered handler so wrapped driver
         # failures become a response instead of escaping the ASGI stack.
-        response = await unhandled_exception_handler(request, exc)
+        if isinstance(exc, HTTPException):
+            response = await http_exception_handler(request, exc)
+        else:
+            response = await unhandled_exception_handler(request, exc)
     
     process_time = (time.time() - start_time) * 1000
     response.headers["X-Process-Time-Ms"] = f"{process_time:.2f}"
@@ -126,6 +131,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return await http_exception_handler(request, exc)
     request_id = getattr(request.state, "request_id", request.headers.get("X-Request-ID", "unknown"))
     logger.error("Unhandled system exception (request_id=%s, type=%s)", request_id, type(exc).__name__)
     db_error_code = database_error_response_code(exc)
