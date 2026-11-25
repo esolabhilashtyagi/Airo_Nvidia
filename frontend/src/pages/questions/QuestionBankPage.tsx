@@ -145,8 +145,6 @@ export function QuestionBankPage() {
 
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
 
-  const [scrapeRound, setScrapeRound] = useState<string>('');
-  const [scrapeDifficulty, setScrapeDifficulty] = useState<string>('');
   const [scrapeLimit, setScrapeLimit] = useState<number>(50);
   const [scrapePlatforms, setScrapePlatforms] = useState<string[]>([
     'LeetCode',
@@ -231,8 +229,8 @@ export function QuestionBankPage() {
         role: effectiveRole,
         yoe: targetYoE,
         skills: skillsArr,
-        round_number: scrapeRound ? parseInt(scrapeRound, 10) : undefined,
-        difficulty: scrapeDifficulty || undefined,
+        round_number: selectedRound ? parseInt(selectedRound, 10) : undefined,
+        difficulty: companyDifficulty || undefined,
         platforms: scrapePlatforms,
         keyword: companySearchInput || '',
         limit: scrapeLimit,
@@ -821,39 +819,9 @@ export function QuestionBankPage() {
               </label>
             </div>
 
-            {/* Row 3: Scrape Filter Parameters (Round, Difficulty, Platform Sources, Scrape Depth) */}
+            {/* Row 3: Scrape Depth, Sources & Action Buttons (uses active Round & Difficulty filters above) */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-violet-100">
               <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                  <span className="font-semibold text-slate-800">Round Focus:</span>
-                  <select
-                    value={scrapeRound}
-                    onChange={(e) => setScrapeRound(e.target.value)}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                  >
-                    <option value="">All Rounds (Comprehensive 1-5)</option>
-                    <option value="1">Round 1: Screening & Foundations</option>
-                    <option value="2">Round 2: Core Domain & Problem Solving</option>
-                    <option value="3">Round 3: Applied Case Study / Machine Coding</option>
-                    <option value="4">Round 4: Architecture & Strategy</option>
-                    <option value="5">Round 5: Behavioral & Leadership</option>
-                  </select>
-                </label>
-
-                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                  <span className="font-semibold text-slate-800">Difficulty:</span>
-                  <select
-                    value={scrapeDifficulty}
-                    onChange={(e) => setScrapeDifficulty(e.target.value)}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                  >
-                    <option value="">All Difficulties</option>
-                    <option value="Easy">Easy</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Hard">Hard</option>
-                  </select>
-                </label>
-
                 <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
                   <span className="font-semibold text-slate-800">Limit:</span>
                   <select
