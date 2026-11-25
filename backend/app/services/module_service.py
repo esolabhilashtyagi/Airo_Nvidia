@@ -1,14 +1,42 @@
+import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.integrations.ai.provider_factory import get_ai_provider
 from app.models.candidate import CandidateProfile
 from app.models.module import CandidateModuleProgress, Lesson, LessonProgress, Module, ModuleProgressStatus, Roadmap, RoadmapTask
-from app.schemas.module import LessonResponse, ModuleResponse, RoadmapResponse, RoadmapTaskResponse
+from app.schemas.module import (
+    LessonResponse,
+    ModuleResponse,
+    RoadmapResponse,
+    RoadmapTaskResponse,
+    TopicExploreResponse,
+    TopicResourceLink,
+    TopicSubtopicItem,
+)
+from app.services.learning_resources import LearningResourceService
+
+logger = logging.getLogger("aairo.modules")
+
+
+class _AITopicSubtopic(BaseModel):
+    title: str = Field(min_length=3, max_length=120)
+    summary: str = Field(min_length=10, max_length=400)
+    estimated_minutes: int = Field(default=30, ge=10, le=180)
+    key_concepts: List[str] = Field(default_factory=list, max_length=6)
+    search_query: str = Field(min_length=2, max_length=120)
+
+
+class _AITopicBreakdown(BaseModel):
+    overview: str = Field(min_length=10, max_length=500)
+    subtopics: List[_AITopicSubtopic] = Field(min_length=3, max_length=6)
 
 
 class ModuleService:
@@ -229,3 +257,133 @@ class ModuleService:
         await db.commit()
         await db.refresh(task)
         return RoadmapTaskResponse.model_validate(task)
+
+    @staticmethod
+    async def explore_broad_topic(
+        candidate_profile: CandidateProfile,
+        broad_topic: str,
+        subtopic_count: int = 4,
+    ) -> TopicExploreResponse:
+        """Break a broad topic into subtopics and attach Blogs, Courses, and Video links."""
+        clean_topic = " ".join(broad_topic.split()).strip()
+        target_role = (candidate_profile.target_role or "Software Engineer").strip()
+        count = max(3, min(subtopic_count, 6))
+
+        overview = f"Structured {count}-part learning breakdown for {clean_topic}, tailored for {target_role} preparation."
+        raw_subtopics: list[dict] = []
+        ai_generated = False
+
+        try:
+            provider = get_ai_provider()
+            if provider.is_available():
+                prompt = (
+                    f"Break the broad learning topic '{clean_topic}' into exactly {count} progressive, "
+                    f"practical subtopics for a candidate targeting the role '{target_role}'. "
+                    "Order them from core foundations to advanced architecture, production trade-offs, "
+                    "and interview problem-solving. For each subtopic, provide a clear title, a concise "
+                    "1-2 sentence summary, estimated study minutes (15-90), 3-5 key concepts, and a "
+                    "concise search_query suitable for finding technical blogs, courses, and video tutorials."
+                )
+                ai_resp = await provider.generate_structured(
+                    prompt,
+                    _AITopicBreakdown,
+                    system_instruction="You are a senior technical curriculum architect. Return clean JSON matching the schema.",
+                    temperature=0.3,
+                )
+                if ai_resp.is_success and ai_resp.structured_data:
+                    parsed = _AITopicBreakdown.model_validate(ai_resp.structured_data)
+                    overview = parsed.overview
+                    raw_subtopics = [s.model_dump() for s in parsed.subtopics[:count]]
+                    ai_generated = True
+        except Exception as exc:
+            logger.info("AI topic breakdown unavailable, using structured fallback (%s)", type(exc).__name__)
+
+        if not raw_subtopics:
+            templates = [
+                (
+                    f"{clean_topic}: Core Fundamentals & Mental Models",
+                    f"Master the foundational building blocks, terminology, and core mechanics behind {clean_topic}.",
+                    30,
+                    ["Core Concepts", "Architecture Basics", "Key Terminology"],
+                    f"{clean_topic} fundamentals tutorial",
+                ),
+                (
+                    f"{clean_topic}: Practical Implementation & Patterns",
+                    f"Learn hands-on design patterns, workflows, and real-world code/system structures in {clean_topic}.",
+                    45,
+                    ["Design Patterns", "Best Practices", "Hands-on Implementation"],
+                    f"{clean_topic} practical guide implementation",
+                ),
+                (
+                    f"{clean_topic}: Scaling, Performance & Trade-offs",
+                    f"Analyze bottlenecks, reliability, latency, and engineering trade-offs when applying {clean_topic} at scale.",
+                    45,
+                    ["Performance Tuning", "Scalability", "Failure Modes"],
+                    f"{clean_topic} scalability performance trade-offs",
+                ),
+                (
+                    f"{clean_topic}: Interview Case Studies & Deep Dive",
+                    f"Apply {clean_topic} to end-to-end {target_role} interview scenarios and production architecture reviews.",
+                    40,
+                    ["System Case Studies", "Decision Matrix", "Interview Readiness"],
+                    f"{clean_topic} interview system design case study",
+                ),
+                (
+                    f"{clean_topic}: Testing, Monitoring & Production Operations",
+                    f"Cover observability, debugging, and continuous validation workflows for {clean_topic}.",
+                    30,
+                    ["Observability", "Testing", "Production Readiness"],
+                    f"{clean_topic} testing monitoring production",
+                ),
+                (
+                    f"{clean_topic}: Advanced Topics & Emerging Ecosystem",
+                    f"Explore modern tooling, recent advancements, and advanced optimization techniques in {clean_topic}.",
+                    35,
+                    ["Modern Tooling", "Advanced Optimization", "Ecosystem"],
+                    f"{clean_topic} advanced architecture",
+                ),
+            ]
+            raw_subtopics = [
+                {
+                    "title": t[0],
+                    "summary": t[1],
+                    "estimated_minutes": t[2],
+                    "key_concepts": t[3],
+                    "search_query": t[4],
+                }
+                for t in templates[:count]
+            ]
+
+        resource_tasks = [
+            LearningResourceService.search_subtopic_resources(
+                subtopic_title=st["title"],
+                broad_topic=clean_topic,
+                target_role=target_role,
+                search_query=st.get("search_query", st["title"]),
+            )
+            for st in raw_subtopics
+        ]
+        all_resources = await asyncio.gather(*resource_tasks)
+
+        subtopics_out: list[TopicSubtopicItem] = []
+        for idx, (st, res) in enumerate(zip(raw_subtopics, all_resources), start=1):
+            subtopics_out.append(
+                TopicSubtopicItem(
+                    order_index=idx,
+                    title=st["title"],
+                    summary=st["summary"],
+                    estimated_minutes=st.get("estimated_minutes", 30),
+                    key_concepts=st.get("key_concepts", []),
+                    blogs=[TopicResourceLink(**b) for b in res.get("blogs", [])],
+                    courses=[TopicResourceLink(**c) for c in res.get("courses", [])],
+                    videos=[TopicResourceLink(**v) for v in res.get("videos", [])],
+                )
+            )
+
+        return TopicExploreResponse(
+            broad_topic=clean_topic,
+            target_role=target_role,
+            overview=overview,
+            ai_generated=ai_generated,
+            subtopics=subtopics_out,
+        )

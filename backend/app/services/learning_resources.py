@@ -4,7 +4,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
+from urllib.parse import quote_plus, urlsplit
 from typing import Any
 
 import httpx
@@ -141,3 +141,114 @@ class LearningResourceService:
             # a header and provider errors may contain sensitive diagnostics.
             logger.info("YouTube video search unavailable (%s)", type(exc).__name__)
             return [], "unavailable"
+
+    @staticmethod
+    async def _search_devto_blogs(query: str, limit: int = 3) -> list[dict[str, Any]]:
+        """Fetch live engineering blog articles from Dev.to's public API."""
+        # Extract the most specific alphanumeric tag/keyword for Dev.to
+        tokens = [t for t in re.findall(r"[a-zA-Z0-9]+", query.lower()) if len(t) > 2]
+        tag = tokens[0] if tokens else "programming"
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                response = await client.get(
+                    "https://dev.to/api/articles",
+                    params={"tag": tag, "per_page": max(limit * 2, 6), "top": 30},
+                )
+                if response.status_code != 200 or not response.json():
+                    response = await client.get(
+                        "https://dev.to/api/articles",
+                        params={"per_page": limit, "top": 7},
+                    )
+                response.raise_for_status()
+                items = response.json() or []
+            blogs = []
+            for art in items[:limit]:
+                url = art.get("url")
+                if not isinstance(url, str) or not url.startswith("https://"):
+                    continue
+                mins = art.get("reading_time_minutes")
+                blogs.append({
+                    "title": str(art.get("title") or "Engineering Article")[:200],
+                    "url": url,
+                    "source": "Dev.to",
+                    "resource_type": "blog",
+                    "metadata": f"{mins} min read" if mins else "Article",
+                })
+            return blogs
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            logger.info("Dev.to blog search unavailable (%s)", type(exc).__name__)
+            return []
+
+    @staticmethod
+    async def search_subtopic_resources(
+        subtopic_title: str,
+        broad_topic: str,
+        target_role: str = "",
+        search_query: str = "",
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Fetch Blogs/Articles, Courses, and Video links for a specific subtopic."""
+        effective_query = (search_query or f"{subtopic_title} {broad_topic}").strip()
+        encoded = quote_plus(effective_query)
+
+        devto_task = LearningResourceService._search_devto_blogs(subtopic_title, limit=2)
+        openalex_task = LearningResourceService._search_articles(effective_query, limit=2)
+        youtube_task = LearningResourceService._search_videos(f"{effective_query} tutorial", limit=2)
+
+        devto_blogs, (openalex_articles, _), (yt_videos, _) = await asyncio.gather(
+            devto_task, openalex_task, youtube_task
+        )
+
+        blogs: list[dict[str, Any]] = list(devto_blogs)
+        for art in openalex_articles:
+            blogs.append({
+                "title": art["title"],
+                "url": art["url"],
+                "source": art.get("source", "OpenAlex"),
+                "resource_type": "blog",
+                "metadata": f"{art.get('publication_year', '')} · {art.get('citation_count', 0)} citations".strip(" ·"),
+            })
+        if not blogs:
+            blogs.append({
+                "title": f"{subtopic_title} — Technical Guides & Articles",
+                "url": f"https://www.freecodecamp.org/news/search/?query={encoded}",
+                "source": "freeCodeCamp News",
+                "resource_type": "blog",
+                "metadata": "Curated technical blogs",
+            })
+
+        courses: list[dict[str, Any]] = [
+            {
+                "title": f"{subtopic_title} — Structured Courses",
+                "url": f"https://www.coursera.org/search?query={encoded}",
+                "source": "Coursera",
+                "resource_type": "course",
+                "metadata": "Guided course track",
+            },
+            {
+                "title": f"{subtopic_title} — OpenCourseWare & Labs",
+                "url": f"https://ocw.mit.edu/search/?q={encoded}",
+                "source": "MIT OpenCourseWare",
+                "resource_type": "course",
+                "metadata": "University lectures & notes",
+            },
+        ]
+
+        videos: list[dict[str, Any]] = []
+        for vid in yt_videos:
+            videos.append({
+                "title": vid["title"],
+                "url": vid["url"],
+                "source": vid.get("channel") or "YouTube",
+                "resource_type": "video",
+                "metadata": f"{vid.get('view_count', 0):,} views" if vid.get("view_count") else "Video",
+            })
+        if not videos:
+            videos.append({
+                "title": f"{subtopic_title} — Video Deep Dive & Walkthroughs",
+                "url": f"https://www.youtube.com/results?search_query={quote_plus(effective_query + ' full explanation')}",
+                "source": "YouTube",
+                "resource_type": "video",
+                "metadata": "Video tutorials",
+            })
+
+        return {"blogs": blogs[:3], "courses": courses[:2], "videos": videos[:2]}

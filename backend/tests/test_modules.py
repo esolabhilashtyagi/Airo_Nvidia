@@ -46,3 +46,28 @@ async def test_learning_module_resources_use_module_topic_and_require_access(asy
     assert search.await_args.kwargs["recent_years"] == 2
     no_auth = await async_client.get(f"/api/v1/modules/{module['id']}/resources")
     assert no_auth.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_explore_broad_topic_returns_subtopics_and_resources(async_client, candidate_headers, monkeypatch):
+    mock_res = AsyncMock(return_value={
+        "blogs": [{"title": "Intro Blog", "url": "https://dev.to/example", "source": "Dev.to", "resource_type": "blog", "metadata": "5 min read"}],
+        "courses": [{"title": "Intro Course", "url": "https://www.coursera.org/search?query=test", "source": "Coursera", "resource_type": "course", "metadata": "Guided course"}],
+        "videos": [{"title": "Intro Video", "url": "https://www.youtube.com/results?search_query=test", "source": "YouTube", "resource_type": "video", "metadata": "Video tutorials"}],
+    })
+    monkeypatch.setattr(LearningResourceService, "search_subtopic_resources", mock_res)
+    response = await async_client.post(
+        "/api/v1/modules/explore-topic",
+        headers=candidate_headers,
+        json={"broad_topic": "Distributed Systems", "subtopic_count": 3},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["broad_topic"] == "Distributed Systems"
+    assert len(data["subtopics"]) == 3
+    for sub in data["subtopics"]:
+        assert len(sub["blogs"]) >= 1
+        assert len(sub["courses"]) >= 1
+        assert len(sub["videos"]) >= 1
+    no_auth = await async_client.post("/api/v1/modules/explore-topic", json={"broad_topic": "Distributed Systems"})
+    assert no_auth.status_code == 401

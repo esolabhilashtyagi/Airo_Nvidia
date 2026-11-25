@@ -183,6 +183,28 @@ export const modulesApi = {
       method: 'POST',
     });
   },
+
+  exploreTopic: async (broad_topic: string, subtopic_count = 4) => {
+    return apiClient<{
+      broad_topic: string;
+      target_role: string;
+      overview: string;
+      ai_generated: boolean;
+      subtopics: Array<{
+        order_index: number;
+        title: string;
+        summary: string;
+        estimated_minutes: number;
+        key_concepts: string[];
+        blogs: Array<{ title: string; url: string; source: string; resource_type: string; metadata?: string }>;
+        courses: Array<{ title: string; url: string; source: string; resource_type: string; metadata?: string }>;
+        videos: Array<{ title: string; url: string; source: string; resource_type: string; metadata?: string }>;
+      }>;
+    }>('/modules/explore-topic', {
+      method: 'POST',
+      body: JSON.stringify({ broad_topic, subtopic_count }),
+    });
+  },
 };
 
 export const coachApi = {

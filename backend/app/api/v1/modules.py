@@ -13,7 +13,8 @@ from app.models.taxonomy import Industry, JobRole, Skill
 from app.models.user import UserRole
 from app.schemas.common import APIResponse
 from app.schemas.module import (LessonManageCreate, LessonResponse, ModuleManageCreate,
-    ModuleManageUpdate, ModuleResponse, RoadmapResponse, RoadmapTaskResponse)
+    ModuleManageUpdate, ModuleResponse, RoadmapResponse, RoadmapTaskResponse,
+    TopicExploreRequest, TopicExploreResponse)
 from app.services.module_service import ModuleService
 
 router = APIRouter(prefix="/modules", tags=["Learning Modules & Roadmaps"])
@@ -151,6 +152,20 @@ async def toggle_roadmap_task(
 ):
     task = await ModuleService.toggle_roadmap_task(db, task_id, candidate_profile.id)
     return APIResponse(data=task, message="Roadmap task updated")
+
+
+@router.post("/explore-topic", response_model=APIResponse[TopicExploreResponse])
+async def explore_broad_topic(
+    request: TopicExploreRequest,
+    candidate_profile: CandidateProfile = Depends(get_current_candidate_profile),
+):
+    """Break a broad topic into subtopics and return curated Blogs, Courses, and Video links."""
+    result = await ModuleService.explore_broad_topic(
+        candidate_profile=candidate_profile,
+        broad_topic=request.broad_topic,
+        subtopic_count=request.subtopic_count,
+    )
+    return APIResponse(data=result, message=f"Generated subtopics and learning resources for {request.broad_topic}")
 
 
 @router.get("/{module_id}", response_model=APIResponse[ModuleResponse])

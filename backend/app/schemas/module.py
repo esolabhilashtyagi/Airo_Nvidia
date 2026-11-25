@@ -86,3 +86,35 @@ class LessonManageCreate(BaseModel):
     content: str = Field(min_length=5)
     duration_minutes: int = Field(default=15, ge=1, le=10000)
     order_index: int = Field(default=1, ge=1)
+
+
+class TopicExploreRequest(BaseModel):
+    broad_topic: str = Field(min_length=2, max_length=150)
+    subtopic_count: int = Field(default=4, ge=3, le=6)
+
+
+class TopicResourceLink(BaseModel):
+    title: str
+    url: str
+    source: str
+    resource_type: str  # "blog" | "course" | "video"
+    metadata: Optional[str] = None
+
+
+class TopicSubtopicItem(BaseModel):
+    order_index: int
+    title: str
+    summary: str
+    estimated_minutes: int
+    key_concepts: List[str] = Field(default_factory=list)
+    blogs: List[TopicResourceLink] = Field(default_factory=list)
+    courses: List[TopicResourceLink] = Field(default_factory=list)
+    videos: List[TopicResourceLink] = Field(default_factory=list)
+
+
+class TopicExploreResponse(BaseModel):
+    broad_topic: str
+    target_role: str
+    overview: str
+    ai_generated: bool = False
+    subtopics: List[TopicSubtopicItem] = Field(default_factory=list)
