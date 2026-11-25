@@ -56,6 +56,7 @@ export function ModulesPage() {
   const [topicError, setTopicError] = useState('');
   const [exploredTopics, setExploredTopics] = useState<TopicExploration[]>([]);
   const [completedSubtopics, setCompletedSubtopics] = useState<Record<string, number[]>>({});
+  const [activeResTab, setActiveResTab] = useState<Record<string, 'videos' | 'blogs' | 'courses'>>({});
   const selectedTopic = exploredTopics.find((t) => `topic:${t.broad_topic}` === selectedId) ?? null;
   const selected = selectedTopic ? null : (modules.find((module) => module.id === selectedId) ?? modules[0]);
   const requestedModuleId = searchParams.get('moduleId');
@@ -136,32 +137,33 @@ export function ModulesPage() {
 
   return (
     <section className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-violet-700">Learning</p>
-          <h1 className="mt-1 text-3xl font-bold text-slate-900">Learning Modules</h1>
-          <p className="mt-2 text-slate-600">Continue published modules or explore any broad topic broken into subtopics with blogs, courses, and video links.</p>
-        </div>
+      <header>
+        <p className="text-sm font-semibold text-violet-700">Learning</p>
+        <h1 className="mt-1 text-3xl font-bold text-slate-900">Learning Modules</h1>
+        <p className="mt-2 text-slate-600">Continue published modules or explore any broad topic broken into subtopics with top-viewed videos, blogs, and courses.</p>
+      </header>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void handleExploreTopic();
           }}
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-wrap items-center gap-2.5"
         >
           <input
             type="text"
             value={broadTopic}
             onChange={(e) => setBroadTopic(e.target.value)}
-            placeholder="Explore broad topic (e.g. System Design)..."
+            placeholder="Enter a broad topic to learn (e.g. System Design, Generative AI, Kubernetes)..."
             aria-label="Broad topic"
-            className="w-64 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 focus:outline-none"
+            className="min-w-[240px] flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-500 focus:bg-white focus:ring-1 focus:ring-violet-500 focus:outline-none"
           />
           <select
             value={subtopicCount}
             onChange={(e) => setSubtopicCount(Number(e.target.value))}
             aria-label="Subtopic count"
-            className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-700 focus:border-violet-500 focus:outline-none"
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-violet-500 focus:bg-white focus:outline-none"
           >
             <option value={3}>3 subtopics</option>
             <option value={4}>4 subtopics</option>
@@ -171,31 +173,30 @@ export function ModulesPage() {
           <button
             type="submit"
             disabled={exploringTopic}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-800 disabled:opacity-50"
           >
             <Sparkles className="h-4 w-4" />
             <span>{exploringTopic ? 'Generating…' : 'Explore topic'}</span>
           </button>
         </form>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-xs font-medium text-slate-500">Quick topics:</span>
-        {BROAD_TOPIC_PRESETS.map((preset) => (
-          <button
-            key={preset}
-            type="button"
-            onClick={() => void handleExploreTopic(preset)}
-            disabled={exploringTopic}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-              selectedTopic?.broad_topic === preset
-                ? 'bg-violet-700 text-white'
-                : 'border border-slate-200 bg-white text-slate-700 hover:border-violet-300 hover:text-violet-800'
-            }`}
-          >
-            {preset}
-          </button>
-        ))}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-slate-400">Popular:</span>
+          {BROAD_TOPIC_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => void handleExploreTopic(preset)}
+              disabled={exploringTopic}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                selectedTopic?.broad_topic === preset
+                  ? 'bg-violet-100 text-violet-800 ring-1 ring-violet-300'
+                  : 'bg-slate-100 text-slate-600 hover:bg-violet-50 hover:text-violet-700'
+              }`}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
       </div>
 
       {topicError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{topicError}</div>}
@@ -267,45 +268,124 @@ export function ModulesPage() {
                           ))}
                         </div>
                       )}
-                      <nav aria-label={`${sub.title} learning resources`} className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 text-sm">
-                        <div className="flex flex-wrap gap-x-5 gap-y-2">
-                          {sub.blogs.map((b, i) => (
-                            <a key={`blog-${i}`} href={b.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
-                              <FileText className="h-3.5 w-3.5" />
-                              <span>{i === 0 ? `Blog: ${b.title}` : b.source}</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ))}
-                          {sub.courses.map((c, i) => (
-                            <a key={`course-${i}`} href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
-                              <GraduationCap className="h-3.5 w-3.5" />
-                              <span>Course ({c.source})</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          ))}
-                        </div>
-                        {sub.videos.length > 0 && (
-                          <div>
-                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Top {sub.videos.length} Recommended YouTube Videos (By Views)
-                            </p>
-                            <ul className="space-y-1 text-xs">
-                              {sub.videos.map((v, i) => (
-                                <li key={`vid-${i}`} className="flex flex-wrap items-center gap-1.5">
-                                  <a href={v.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
-                                    <PlayCircle className="h-3.5 w-3.5 shrink-0" />
-                                    <span>{v.title}</span>
-                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                      <div className="mt-4 border-t border-slate-100 pt-3">
+                        {(() => {
+                          const tabKey = `${selectedTopic.broad_topic}:${sub.order_index}`;
+                          const activeTab = activeResTab[tabKey] ?? 'videos';
+                          return (
+                            <>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveResTab((prev) => ({ ...prev, [tabKey]: 'videos' }))}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                                    activeTab === 'videos'
+                                      ? 'bg-violet-100 text-violet-800'
+                                      : 'text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <PlayCircle className="h-3.5 w-3.5" />
+                                  <span>Top Videos ({sub.videos.length})</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveResTab((prev) => ({ ...prev, [tabKey]: 'blogs' }))}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                                    activeTab === 'blogs'
+                                      ? 'bg-violet-100 text-violet-800'
+                                      : 'text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <FileText className="h-3.5 w-3.5" />
+                                  <span>Blogs & Articles ({sub.blogs.length})</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveResTab((prev) => ({ ...prev, [tabKey]: 'courses' }))}
+                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                                    activeTab === 'courses'
+                                      ? 'bg-violet-100 text-violet-800'
+                                      : 'text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <GraduationCap className="h-3.5 w-3.5" />
+                                  <span>Courses ({sub.courses.length})</span>
+                                </button>
+                              </div>
+
+                              <div className="mt-2.5 space-y-1.5">
+                                {activeTab === 'videos' && sub.videos.map((v, i) => (
+                                  <a
+                                    key={`vid-${i}`}
+                                    href={v.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs transition hover:border-violet-200 hover:bg-violet-50/40"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-800">
+                                        {i + 1}
+                                      </span>
+                                      <span className="truncate font-medium text-slate-900">{v.title}</span>
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-2 text-slate-500">
+                                      <span>{v.source}</span>
+                                      {v.metadata && (
+                                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                          {v.metadata}
+                                        </span>
+                                      )}
+                                      <ExternalLink className="h-3.5 w-3.5 text-violet-700" />
+                                    </span>
                                   </a>
-                                  <span className="text-slate-500">
-                                    — {v.source}{v.metadata ? ` (${v.metadata})` : ''}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </nav>
+                                ))}
+
+                                {activeTab === 'blogs' && sub.blogs.map((b, i) => (
+                                  <a
+                                    key={`blog-${i}`}
+                                    href={b.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs transition hover:border-violet-200 hover:bg-violet-50/40"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <FileText className="h-3.5 w-3.5 shrink-0 text-violet-700" />
+                                      <span className="truncate font-medium text-slate-900">{b.title}</span>
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-2 text-slate-500">
+                                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                        {b.source}{b.metadata ? ` · ${b.metadata}` : ''}
+                                      </span>
+                                      <ExternalLink className="h-3.5 w-3.5 text-violet-700" />
+                                    </span>
+                                  </a>
+                                ))}
+
+                                {activeTab === 'courses' && sub.courses.map((c, i) => (
+                                  <a
+                                    key={`course-${i}`}
+                                    href={c.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs transition hover:border-violet-200 hover:bg-violet-50/40"
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <GraduationCap className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+                                      <span className="truncate font-medium text-slate-900">{c.title}</span>
+                                    </span>
+                                    <span className="flex shrink-0 items-center gap-2 text-slate-500">
+                                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200">
+                                        {c.source}
+                                      </span>
+                                      <ExternalLink className="h-3.5 w-3.5 text-violet-700" />
+                                    </span>
+                                  </a>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
                     </section>
                   );
                 })}
