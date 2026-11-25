@@ -4,9 +4,11 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.core.database import async_engine
 
 from app.integrations.ai.base import AIResponse
 from app.integrations.ai.prompt_manager import PromptManager
@@ -98,6 +100,8 @@ class QuestionService:
 
     @staticmethod
     def _public_content_filter():
+        if async_engine.dialect.name == "sqlite":
+            return or_(Question.tags.is_(None), ~cast(Question.tags, String).contains('"assessment_only"'))
         return ~Question.tags.contains(["assessment_only"])
 
     @staticmethod
