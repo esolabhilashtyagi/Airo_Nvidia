@@ -1,6 +1,7 @@
 """Real external learning-resource search with explicit source/ranking metadata."""
 
 import asyncio
+import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -180,23 +181,105 @@ class LearningResourceService:
             return []
 
     @staticmethod
+    def _parse_view_count(views_text: str) -> int:
+        if not views_text:
+            return 0
+        txt = views_text.lower().replace(",", "").strip()
+        m = re.search(r"(\d+(?:\.\d+)?)\s*([kmb])?", txt)
+        if not m:
+            return 0
+        num = float(m.group(1))
+        suffix = m.group(2)
+        if suffix == "k":
+            num *= 1_000
+        elif suffix == "m":
+            num *= 1_000_000
+        elif suffix == "b":
+            num *= 1_000_000_000
+        return int(num)
+
+    @staticmethod
+    async def _search_youtube_web(query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Fetch top YouTube videos with view counts directly from YouTube search results."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                response = await client.get(
+                    "https://www.youtube.com/results",
+                    params={"search_query": query},
+                    headers=headers,
+                )
+                response.raise_for_status()
+                html = response.text
+            match = re.search(r"var ytInitialData = (\{.*?\});</script>", html) or re.search(
+                r"ytInitialData\s*=\s*(\{.*?\});", html
+            )
+            if not match:
+                return []
+            data = json.loads(match.group(1))
+            sections = (
+                data.get("contents", {})
+                .get("twoColumnSearchResultsRenderer", {})
+                .get("primaryContents", {})
+                .get("sectionListRenderer", {})
+                .get("contents", [])
+            )
+            videos: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
+            for sec in sections:
+                for item in sec.get("itemSectionRenderer", {}).get("contents", []):
+                    vr = item.get("videoRenderer")
+                    if not vr:
+                        continue
+                    vid_id = vr.get("videoId")
+                    if not isinstance(vid_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", vid_id) or vid_id in seen_ids:
+                        continue
+                    title = "".join(run.get("text", "") for run in vr.get("title", {}).get("runs", [])).strip()
+                    views_text = (vr.get("viewCountText", {}).get("simpleText") or "").strip()
+                    channel = "".join(run.get("text", "") for run in vr.get("ownerText", {}).get("runs", [])).strip()
+                    view_count = LearningResourceService._parse_view_count(views_text)
+                    if not title or not views_text or view_count <= 0:
+                        continue
+                    seen_ids.add(vid_id)
+                    videos.append({
+                        "title": title[:200],
+                        "url": f"https://www.youtube.com/watch?v={vid_id}",
+                        "channel": channel[:120] or "YouTube",
+                        "view_count": view_count,
+                        "views_label": views_text,
+                        "source": channel[:120] or "YouTube",
+                    })
+            videos.sort(key=lambda v: v["view_count"], reverse=True)
+            return videos[:limit]
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            logger.info("YouTube web search unavailable (%s)", type(exc).__name__)
+            return []
+
+    @staticmethod
     async def search_subtopic_resources(
         subtopic_title: str,
         broad_topic: str,
         target_role: str = "",
         search_query: str = "",
     ) -> dict[str, list[dict[str, Any]]]:
-        """Fetch Blogs/Articles, Courses, and Video links for a specific subtopic."""
+        """Fetch Blogs/Articles, Courses, and Top 5 high-view YouTube Videos for a subtopic."""
         effective_query = (search_query or f"{subtopic_title} {broad_topic}").strip()
         encoded = quote_plus(effective_query)
 
         devto_task = LearningResourceService._search_devto_blogs(subtopic_title, limit=2)
         openalex_task = LearningResourceService._search_articles(effective_query, limit=2)
-        youtube_task = LearningResourceService._search_videos(f"{effective_query} tutorial", limit=2)
+        youtube_api_task = LearningResourceService._search_videos(f"{effective_query} tutorial", limit=5)
 
-        devto_blogs, (openalex_articles, _), (yt_videos, _) = await asyncio.gather(
-            devto_task, openalex_task, youtube_task
+        devto_blogs, (openalex_articles, _), (yt_api_videos, yt_status) = await asyncio.gather(
+            devto_task, openalex_task, youtube_api_task
         )
+
+        yt_videos = yt_api_videos
+        if not yt_videos or yt_status != "available":
+            yt_videos = await LearningResourceService._search_youtube_web(f"{effective_query} tutorial", limit=5)
 
         blogs: list[dict[str, Any]] = list(devto_blogs)
         for art in openalex_articles:
@@ -234,21 +317,22 @@ class LearningResourceService:
         ]
 
         videos: list[dict[str, Any]] = []
-        for vid in yt_videos:
+        for vid in yt_videos[:5]:
+            views_meta = vid.get("views_label") or (f"{vid.get('view_count', 0):,} views" if vid.get("view_count") else "YouTube")
             videos.append({
                 "title": vid["title"],
                 "url": vid["url"],
                 "source": vid.get("channel") or "YouTube",
                 "resource_type": "video",
-                "metadata": f"{vid.get('view_count', 0):,} views" if vid.get("view_count") else "Video",
+                "metadata": views_meta,
             })
         if not videos:
             videos.append({
-                "title": f"{subtopic_title} — Video Deep Dive & Walkthroughs",
+                "title": f"{subtopic_title} — Top YouTube Tutorials",
                 "url": f"https://www.youtube.com/results?search_query={quote_plus(effective_query + ' full explanation')}",
                 "source": "YouTube",
                 "resource_type": "video",
                 "metadata": "Video tutorials",
             })
 
-        return {"blogs": blogs[:3], "courses": courses[:2], "videos": videos[:2]}
+        return {"blogs": blogs[:3], "courses": courses[:2], "videos": videos[:5]}

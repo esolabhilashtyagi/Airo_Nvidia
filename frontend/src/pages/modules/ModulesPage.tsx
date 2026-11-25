@@ -267,28 +267,44 @@ export function ModulesPage() {
                           ))}
                         </div>
                       )}
-                      <nav aria-label={`${sub.title} learning resources`} className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-sm">
-                        {sub.blogs.map((b, i) => (
-                          <a key={`blog-${i}`} href={b.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>{i === 0 ? `Blog: ${b.title}` : b.source}</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ))}
-                        {sub.courses.map((c, i) => (
-                          <a key={`course-${i}`} href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
-                            <GraduationCap className="h-3.5 w-3.5" />
-                            <span>Course ({c.source})</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ))}
-                        {sub.videos.map((v, i) => (
-                          <a key={`vid-${i}`} href={v.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
-                            <PlayCircle className="h-3.5 w-3.5" />
-                            <span>Watch video</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        ))}
+                      <nav aria-label={`${sub.title} learning resources`} className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 text-sm">
+                        <div className="flex flex-wrap gap-x-5 gap-y-2">
+                          {sub.blogs.map((b, i) => (
+                            <a key={`blog-${i}`} href={b.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
+                              <FileText className="h-3.5 w-3.5" />
+                              <span>{i === 0 ? `Blog: ${b.title}` : b.source}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ))}
+                          {sub.courses.map((c, i) => (
+                            <a key={`course-${i}`} href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
+                              <GraduationCap className="h-3.5 w-3.5" />
+                              <span>Course ({c.source})</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ))}
+                        </div>
+                        {sub.videos.length > 0 && (
+                          <div>
+                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Top {sub.videos.length} Recommended YouTube Videos (By Views)
+                            </p>
+                            <ul className="space-y-1 text-xs">
+                              {sub.videos.map((v, i) => (
+                                <li key={`vid-${i}`} className="flex flex-wrap items-center gap-1.5">
+                                  <a href={v.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-violet-800 underline">
+                                    <PlayCircle className="h-3.5 w-3.5 shrink-0" />
+                                    <span>{v.title}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
+                                  <span className="text-slate-500">
+                                    — {v.source}{v.metadata ? ` (${v.metadata})` : ''}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </nav>
                     </section>
                   );
