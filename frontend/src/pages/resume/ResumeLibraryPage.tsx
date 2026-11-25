@@ -20,6 +20,7 @@ export function ResumeLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState<'uploading' | 'processing'>('uploading');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -49,9 +50,13 @@ export function ResumeLibraryPage() {
     if (file.size > MAX_FILE_SIZE) { setError('The file exceeds the 15 MB upload limit.'); return; }
     setUploading(true);
     setProgress(0);
+    setUploadStage('uploading');
     setError(null);
     try {
-      const resume = await resumesApi.uploadResume(file, setProgress);
+      const resume = await resumesApi.uploadResume(file, (value, stage) => {
+        setProgress(value);
+        setUploadStage(stage || 'uploading');
+      });
       navigate(`/resume/${resume.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed. Try again.';
@@ -87,18 +92,18 @@ export function ResumeLibraryPage() {
       <label htmlFor="resume-file" className="sr-only"><RequiredLabel>Resume file</RequiredLabel></label>
       <input id="resume-file" ref={inputRef} type="file" accept=".pdf,.docx,.png,.jpg,.jpeg" className="hidden" onChange={(event) => void uploadFile(event.target.files?.[0])} />
       {uploading && <div role="status" aria-live="polite" className="rounded-xl border border-violet-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-3 text-sm"><span className="font-medium text-slate-800">Uploading and processing your resume</span><span className="tabular-nums text-violet-800">{progress}%</span></div>
-        <div role="progressbar" aria-label="Resume upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-600 transition-[width] duration-200" style={{ width: `${progress}%` }} /></div>
+        <div className="flex items-center justify-between gap-3 text-sm"><span className="font-medium text-slate-800">{uploadStage === 'uploading' ? 'Uploading resume' : 'Upload complete · processing resume'}</span><span className="tabular-nums text-violet-800">{progress}%</span></div>
+        <div role="progressbar" aria-label="Resume file upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-violet-600 transition-[width] duration-200" style={{ width: `${progress}%` }} /></div>
       </div>}
       <section aria-labelledby="resume-list-title" className="space-y-3">
         <h2 id="resume-list-title" className="text-base font-semibold text-slate-900">Resume history</h2>
-        {loading ? <LoadingSpinner message="Loading your resume library..." /> : resumes.length === 0 ? (
+        {loading ? <LoadingSpinner message="Loading your resume library..." /> : resumes.length === 0 ? uploading ? null : (
           <div>
             <EmptyState
               icon={FileText}
               iconClassName="!bg-gray-100 !text-gray-500"
-              title={uploading ? `Uploading resume (${progress}%)` : 'No resumes uploaded yet'}
-              description={uploading ? 'Your resume is being checked and processed.' : 'Upload a PDF, DOCX, or image to begin. Extracted text will remain available if AI analysis is not configured.'}
+              title="No resumes uploaded yet"
+              description="Upload a PDF, DOCX, or image to begin. Extracted text will remain available if AI analysis is not configured."
             />
           </div>
         ) : resumes.map((resume) => (

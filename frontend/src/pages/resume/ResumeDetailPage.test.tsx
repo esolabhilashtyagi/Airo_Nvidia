@@ -35,6 +35,8 @@ describe('ResumeDetailPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'candidate-resume.pdf' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Analyze resume' })).toBeTruthy();
+    expect(screen.queryByText('Analysis unavailable')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(resumesApi.getATSReview).not.toHaveBeenCalled();
     expect(screen.queryByText('Match this resume to a job')).toBeNull();

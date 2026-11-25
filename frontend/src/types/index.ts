@@ -57,6 +57,21 @@ export interface Experience {
   description?: string;
 }
 
+export interface ProfileProject {
+  name: string;
+  role?: string;
+  technologies: string[];
+  description?: string;
+  url?: string;
+}
+
+export interface ProfileCertification {
+  name: string;
+  issuer?: string;
+  issue_date?: string;
+  credential_url?: string;
+}
+
 export interface TargetCompany {
   company_name: string;
   target_role?: string;
@@ -67,6 +82,7 @@ export interface CandidateProfile {
   user_id: string;
   candidate_type?: 'working_professional' | 'student_fresher';
   sub_category?: string;
+  avatar_gender?: 'woman' | 'man' | 'non_binary' | 'prefer_not_to_say' | null;
   industry_id?: string;
   industry?: Industry;
   current_company?: string;
@@ -77,6 +93,13 @@ export interface CandidateProfile {
   employment_status?: string;
   key_skills: string[];
   career_goals?: string;
+  professional_summary?: string;
+  phone?: string;
+  location?: string;
+  linkedin_url?: string;
+  github_url?: string;
+  certifications: ProfileCertification[];
+  projects: ProfileProject[];
   onboarding_completed: boolean;
   onboarding_step: number;
   interview_rounds_preferred: string[];
@@ -446,7 +469,16 @@ export interface DashboardOverview {
   target_role?: string;
   industry_name?: string;
   interview_readiness_score: number;
-  readiness_factors: Record<string, string>;
+  readiness_factors: {
+    coverage_percent: number;
+    components: Record<string, {
+      label: string;
+      weight_percent: number;
+      score_percent: number | null;
+      included: boolean;
+      description: string;
+    }>;
+  };
   metrics: {
     title: string;
     value: string | number;

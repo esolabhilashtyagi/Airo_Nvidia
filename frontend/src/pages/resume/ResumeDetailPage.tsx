@@ -1,13 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Check, Clock3, FileText, LoaderCircle, Save, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Clock3, FileText, LoaderCircle, LockKeyhole, Save, Trash2, X } from 'lucide-react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { resumesApi } from '../../api/resumes';
+import { paymentsApi } from '../../api/services';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { calculateResumeReadiness } from '../../utils/resumeReadiness';
 import type { ResumeAnalysis, ResumeDetail, ResumeParsedData, ResumeSuggestion } from '../../types';
 
 type Tab = 'overview' | 'analysis' | 'enhancement' | 'versions';
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: {
+      key: string; amount: number; currency: string; name: string; description: string; order_id: string;
+      handler: (result: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => void;
+      modal?: { ondismiss?: () => void };
+      theme?: { color: string };
+    }) => { open: () => void; on: (event: string, callback: (result: unknown) => void) => void };
+  }
+}
 
 export function ResumeDetailPage() {
   const { resumeId = '' } = useParams();
@@ -21,6 +33,8 @@ export function ResumeDetailPage() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [atsAccess, setAtsAccess] = useState<Awaited<ReturnType<typeof paymentsApi.atsAccess>> | null>(null);
+  const [checkoutWorking, setCheckoutWorking] = useState(false);
 
   const tab: Tab = location.pathname.endsWith('/analysis') ? 'analysis'
     : location.pathname.endsWith('/enhancement') ? 'enhancement'
@@ -45,6 +59,7 @@ export function ResumeDetailPage() {
   }, [resumeId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void paymentsApi.atsAccess().then(setAtsAccess).catch(() => setAtsAccess(null)); }, []);
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     setWorking(true);
@@ -93,6 +108,61 @@ export function ResumeDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Resume deletion failed.');
       setWorking(false);
+    }
+  };
+
+  const unlockPaidAts = async () => {
+    setCheckoutWorking(true);
+    setError(null);
+    try {
+      const order = await paymentsApi.createAtsOrder();
+      if (!window.Razorpay) {
+        await new Promise<void>((resolve, reject) => {
+          // A previously failed script element does not fire onload on retry.
+          document.querySelector<HTMLScriptElement>('script[data-razorpay-checkout]')?.remove();
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.async = true;
+          script.dataset.razorpayCheckout = 'true';
+          script.onload = () => resolve();
+          script.onerror = () => {
+            script.remove();
+            reject(new Error('Razorpay Checkout could not be loaded. Check your network and retry.'));
+          };
+          document.body.appendChild(script);
+        });
+      }
+      if (!window.Razorpay) throw new Error('Razorpay Checkout is unavailable in this browser.');
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount_paise,
+        currency: order.currency,
+        name: 'AAIRO Education Platform',
+        description: 'Paid ATS resume review access',
+        order_id: order.order_id,
+        theme: { color: '#6D28D9' },
+        handler: async (payment) => {
+          try {
+            await paymentsApi.verifyAtsPayment(payment);
+            setAtsAccess(await paymentsApi.atsAccess());
+            setNotice('Payment verified. Paid ATS review access is now active.');
+          } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Payment verification is pending. Retry shortly.');
+            setAtsAccess(await paymentsApi.atsAccess().catch(() => null));
+          } finally {
+            setCheckoutWorking(false);
+          }
+        },
+        modal: { ondismiss: () => setCheckoutWorking(false) },
+      });
+      checkout.on('payment.failed', () => {
+        setError('Payment did not complete. No ATS access was granted. You can retry.');
+        setCheckoutWorking(false);
+      });
+      checkout.open();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Paid ATS checkout could not be started.');
+      setCheckoutWorking(false);
     }
   };
 
@@ -163,6 +233,9 @@ export function ResumeDetailPage() {
       </div>}
 
       {tab === 'analysis' && <div className="space-y-5">
+        <section className={`rounded-xl border p-5 ${atsAccess?.has_access ? 'border-emerald-200 bg-emerald-50' : 'border-violet-200 bg-violet-50/60'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-2"><LockKeyhole className="h-5 w-5 text-violet-700" /><h2 className="font-semibold text-slate-900">Paid job-specific ATS review</h2></div><p className="mt-1 text-sm text-slate-600">Compare this resume against a job description and get a transparent keyword and section match report. This is an estimate, not an employer ATS score or hiring guarantee.</p>{atsAccess?.has_access ? <p className="mt-2 text-sm font-semibold text-emerald-800">Access active for this account</p> : atsAccess?.checkout_configured ? <p className="mt-2 text-sm font-medium text-slate-700">One-time access: {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(atsAccess.price_paise / 100)}</p> : <p className="mt-2 text-xs text-slate-600">Checkout is not configured yet. Admin must set a price and Razorpay keys before candidates can purchase.</p>}</div>{!atsAccess?.has_access && <button type="button" onClick={() => void unlockPaidAts()} disabled={checkoutWorking || !atsAccess?.checkout_configured} className="rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{checkoutWorking ? 'Opening checkout…' : 'Unlock ATS review'}</button>}</div>
+        </section>
         {resumeReadiness && <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resume-only assessment · no job description needed</p><h2 className="mt-1 text-lg font-semibold text-slate-900">Resume structure check</h2><p className="mt-1 max-w-2xl text-sm text-slate-600">A repeatable check of contact details, section structure, listed skills, measurable evidence, and extracted-text readability.</p></div><div className="text-right"><p className="text-4xl font-bold text-violet-700">{resumeReadiness.score}<span className="text-base font-semibold text-slate-500">/100</span></p><p className="text-xs text-slate-500">Heuristic checklist</p></div></div>
           <div className="grid gap-3 md:grid-cols-2">{resumeReadiness.checks.map((check) => <div key={check.label} className="rounded-lg bg-slate-50 p-3"><div className="flex justify-between gap-3 text-sm"><span className="font-medium text-slate-800">{check.label}</span><span className="font-semibold text-slate-700">{check.score}/{check.maxScore}</span></div><div className="mt-2 h-1.5 rounded-full bg-slate-200"><div className="h-full rounded-full bg-violet-600" style={{ width: `${check.score / check.maxScore * 100}%` }} /></div><p className="mt-1.5 text-xs text-slate-600">{check.evidence}</p></div>)}</div>
@@ -170,10 +243,8 @@ export function ResumeDetailPage() {
           <p className="border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">This 100-point checklist is calculated from extracted text. It is not an ATS vendor score, a job-match score, a hiring probability, or a guarantee. Employer systems vary. Recommendations never add unsupported claims.</p>
         </section>}
         {!resumeReadiness && resume.parsing_status === 'extracted' && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">A resume-only readiness estimate is unavailable because no readable extracted resume text is available. Verify the extraction before relying on resume checks.</p>}
-        {!analysisReady && <div className="rounded-xl border border-purple-200 bg-purple-50 p-5">
-          <div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-purple-800" /><div className="flex-1"><h2 className="font-semibold text-purple-950">Analysis is unavailable</h2><p className="mt-1 text-sm text-purple-900">{resume.analysis_error || 'Request a structured analysis. It requires the configured AI provider.'} No sample scores or suggestions are shown.</p></div></div>
-          <button type="button" onClick={() => void run(() => resumesApi.analyzeResume(resumeId), 'Role-aware analysis completed.')} disabled={working || resume.parsing_status !== 'extracted'} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-800 disabled:opacity-50">{working ? <><LoaderCircle className="h-4 w-4 animate-spin" /> Analyzing…</> : 'Analyze resume'}</button>
-          {resume.parsing_status !== 'extracted' && <p className="mt-2 text-xs text-purple-900">Extract readable text before analysis can run.</p>}
+        {!analysisReady && <div className="flex justify-end">
+          <button type="button" onClick={() => void run(() => resumesApi.analyzeResume(resumeId), 'Role-aware analysis completed.')} disabled={working || resume.parsing_status !== 'extracted'} className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50">{working && <LoaderCircle className="h-4 w-4 animate-spin" />}{working ? 'Analyzing…' : 'Analyze resume'}</button>
         </div>}
         {analysisReady && analysis && <>
           {resume.analysis_error && <div role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{resume.analysis_error}</div>}
@@ -186,9 +257,9 @@ export function ResumeDetailPage() {
       </div>}
 
       {tab === 'enhancement' && <div className="space-y-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Resume enhancements</h2><p className="mt-1 max-w-3xl text-sm text-slate-500">The configured AI provider proposes section-wise clarity, grammar, and concise wording improvements using your resume as the evidence source. Review or edit every suggestion. New facts, skills, or metrics are rejected unless supported by your source resume.</p></div><button type="button" onClick={() => void run(() => resumesApi.enhanceResume(resumeId), 'Source-checked enhancement suggestions generated.')} disabled={working || resume.parsing_status !== 'extracted'} className="rounded-lg bg-violet-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{analysisReady ? 'Refresh suggestions' : 'Generate suggestions'}</button></div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="font-semibold text-slate-900">Resume enhancements</h2><p className="mt-1 max-w-3xl text-sm text-slate-500">Improve clarity and grammar with suggestions grounded in your resume. Review each change; unsupported claims are rejected.</p></div><button type="button" onClick={() => void run(() => resumesApi.enhanceResume(resumeId), 'Source-checked enhancement suggestions generated.')} disabled={working || resume.parsing_status !== 'extracted'} className="rounded-lg bg-violet-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{analysisReady ? 'Refresh suggestions' : 'Generate suggestions'}</button></div></div>
         {enhancedDraft && <section className="rounded-xl border border-violet-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">Your revised text draft</h3><p className="mt-1 text-xs text-slate-600">Accepted edits are applied here. The original uploaded file and extracted source remain unchanged.</p></div><button type="button" onClick={downloadEnhancedDraft} className="rounded-lg border border-violet-300 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50">Download enhanced draft (.txt)</button></div><details className="mt-4"><summary className="cursor-pointer text-sm font-medium text-violet-800">Preview revised resume text</summary><pre className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">{enhancedDraft}</pre></details><p className="mt-3 text-xs text-slate-500">Resume-only readiness checks use this revised draft after you accept edits. Open the Analysis tab to review the current estimate.</p></section>}
-        {!analysisReady ? <p className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900">No verified suggestions are available. Check the configured AI provider and retry analysis to generate source-grounded enhancements.</p> : analysis?.suggestions.length ? analysis.suggestions.map((suggestion) => <SuggestionCard key={suggestion.id} suggestion={suggestion} working={working} editedText={editedSuggestions[suggestion.id] ?? suggestion.suggested_text} onEdit={(text) => setEditedSuggestions((previous) => ({ ...previous, [suggestion.id]: text }))} onReview={reviewSuggestion} />) : <p className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500">The analysis returned no suggestions for this resume.</p>}
+        {!analysisReady ? <p className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900">Suggestions are unavailable. Try again later.</p> : analysis?.suggestions.length ? analysis.suggestions.map((suggestion) => <SuggestionCard key={suggestion.id} suggestion={suggestion} working={working} editedText={editedSuggestions[suggestion.id] ?? suggestion.suggested_text} onEdit={(text) => setEditedSuggestions((previous) => ({ ...previous, [suggestion.id]: text }))} onReview={reviewSuggestion} />) : <p className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500">No suggestions for this resume.</p>}
       </div>}
 
       {tab === 'versions' && <div className="space-y-3">

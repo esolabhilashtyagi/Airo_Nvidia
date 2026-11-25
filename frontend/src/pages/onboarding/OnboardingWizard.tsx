@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { candidatesApi, companiesApi, industriesApi } from '../../api/candidates';
 import { useAuth } from '../../context/AuthContext';
 import type { Industry } from '../../types';
-import type { Education, Experience } from '../../types';
+import type { Education, Experience, ProfileCertification, ProfileProject } from '../../types';
 import { ProfileOverview } from './ProfileOverview';
 import {
   Briefcase, GraduationCap, Building2, CheckCircle2,
@@ -27,6 +27,7 @@ export const OnboardingWizard: React.FC = () => {
 
   // Form State
   const [candidateType, setCandidateType] = useState<'working_professional' | 'student_fresher'>('working_professional');
+  const [avatarGender, setAvatarGender] = useState<'' | 'woman' | 'man' | 'non_binary' | 'prefer_not_to_say'>('');
   const [subCategory, setSubCategory] = useState('experienced_professional');
   const [selectedIndustryId, setSelectedIndustryId] = useState<string>('');
   const [educationList, setEducationList] = useState<Education[]>([]);
@@ -45,6 +46,13 @@ export const OnboardingWizard: React.FC = () => {
   const [companySearchAttempt, setCompanySearchAttempt] = useState(0);
   const [companyRoleInput, setCompanyRoleInput] = useState('');
   const [interactionPreference, setInteractionPreference] = useState<'text' | 'voice'>('text');
+  const [professionalSummary, setProfessionalSummary] = useState('');
+  const [phone, setPhone] = useState('');
+  const [candidateLocation, setCandidateLocation] = useState('');
+  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [projects, setProjects] = useState<ProfileProject[]>([]);
+  const [certifications, setCertifications] = useState<ProfileCertification[]>([]);
   const profileInitialized = useRef(false);
 
   useEffect(() => {
@@ -75,6 +83,7 @@ export const OnboardingWizard: React.FC = () => {
           }
           profileInitialized.current = true;
           if (profile.candidate_type) setCandidateType(profile.candidate_type);
+          if (profile.avatar_gender) setAvatarGender(profile.avatar_gender);
           if (profile.sub_category) setSubCategory(profile.sub_category);
           if (profile.industry_id) setSelectedIndustryId(profile.industry_id);
           if (profile.current_company) setCurrentCompany(profile.current_company);
@@ -86,6 +95,13 @@ export const OnboardingWizard: React.FC = () => {
           if (profile.key_skills?.length > 0) setKeySkillsInput(profile.key_skills.join(', '));
           if (profile.interview_rounds_preferred?.length > 0) setSelectedRounds(profile.interview_rounds_preferred);
           if (profile.interaction_preference) setInteractionPreference(profile.interaction_preference);
+          setProfessionalSummary(profile.professional_summary || '');
+          setPhone(profile.phone || '');
+          setCandidateLocation(profile.location || '');
+          setLinkedinUrl(profile.linkedin_url || '');
+          setGithubUrl(profile.github_url || '');
+          setProjects(profile.projects || []);
+          setCertifications(profile.certifications || []);
           setEducationList(profile.education_history?.map((education) => ({ ...education })) || []);
           setExperienceList(profile.experience_history?.map((experience) => ({ ...experience })) || []);
           setTargetCompanies(profile.target_companies?.map((item) => ({ company_name: item.company?.name || '', target_role: item.target_role || '' })) || []);
@@ -147,6 +163,7 @@ export const OnboardingWizard: React.FC = () => {
       step: currentStep,
       is_final_step: currentStep === 7,
       candidate_type: candidateType,
+      avatar_gender: avatarGender,
       sub_category: subCategory,
       industry_id: selectedIndustryId || null,
       current_company: candidateType === 'working_professional' ? currentCompany.trim() : '',
@@ -158,6 +175,13 @@ export const OnboardingWizard: React.FC = () => {
       key_skills: skills,
       interview_rounds_preferred: selectedRounds,
       target_companies: targetCompanies,
+      professional_summary: professionalSummary.trim(),
+      phone: phone.trim(),
+      location: candidateLocation.trim(),
+      linkedin_url: linkedinUrl.trim(),
+      github_url: githubUrl.trim(),
+      projects: projects.filter((project) => project.name.trim()).map((project) => ({ ...project, name: project.name.trim(), role: project.role?.trim(), technologies: project.technologies.map((value) => value.trim()).filter(Boolean), description: project.description?.trim(), url: project.url?.trim() })),
+      certifications: certifications.filter((item) => item.name.trim()).map((item) => ({ ...item, name: item.name.trim(), issuer: item.issuer?.trim(), issue_date: item.issue_date?.trim(), credential_url: item.credential_url?.trim() })),
       interaction_preference: interactionPreference
     };
 
@@ -277,10 +301,13 @@ export const OnboardingWizard: React.FC = () => {
                     <option value="job_seeker">Active Job Seeker</option>
                     <option value="career_switcher">Career Switcher</option>
                     <option value="promotion_seeker">Promotion / Appraisal Seeker</option>
+                    <option value="career_returner">Returning to Work</option>
+                    <option value="independent_professional">Freelancer / Independent Professional</option>
                   </>
                 ) : (
                   <>
                     <option value="final_year_student">Final-Year Student</option>
+                    <option value="internship_seeker">Internship / Co-op Seeker</option>
                     <option value="recent_graduate">Recent Graduate (0-1 yr)</option>
                     <option value="undergraduate">Undergraduate Student</option>
                     <option value="postgraduate">Postgraduate Student</option>
@@ -510,6 +537,39 @@ export const OnboardingWizard: React.FC = () => {
                 className="w-full mt-1 p-2 bg-white border border-slate-300 rounded-lg text-sm"
               />
             </div>
+
+            <div className="space-y-4 border-t border-slate-200 pt-5">
+              <div><h3 className="font-semibold text-slate-900">Resume details</h3><p className="mt-1 text-xs text-slate-500">Add the contact and summary details you want included in your PDF.</p></div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-medium text-slate-700">Phone<input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 text-sm" /></label>
+                <label className="text-xs font-medium text-slate-700">Location<input value={candidateLocation} onChange={(event) => setCandidateLocation(event.target.value)} placeholder="City, Country" autoComplete="address-level2" className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 text-sm" /></label>
+                <label className="text-xs font-medium text-slate-700">LinkedIn URL<input type="url" value={linkedinUrl} onChange={(event) => setLinkedinUrl(event.target.value)} placeholder="https://linkedin.com/in/…" className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 text-sm" /></label>
+                <label className="text-xs font-medium text-slate-700">GitHub / portfolio URL<input type="url" value={githubUrl} onChange={(event) => setGithubUrl(event.target.value)} placeholder="https://github.com/…" className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 text-sm" /></label>
+              </div>
+              <label className="block text-xs font-medium text-slate-700">Professional summary<textarea maxLength={3000} rows={3} value={professionalSummary} onChange={(event) => setProfessionalSummary(event.target.value)} placeholder="A concise introduction using your own experience and strengths." className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 text-sm" /></label>
+            </div>
+
+            <div className="space-y-3 border-t border-slate-200 pt-5">
+              <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">Projects <span className="font-normal text-slate-500">(optional)</span></h3><p className="mt-1 text-xs text-slate-500">Describe what you built, tools used, and your contribution.</p></div><button type="button" onClick={() => setProjects((items) => [...items, { name: '', technologies: [], description: '' }])} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold"><Plus className="h-3.5 w-3.5" /> Add project</button></div>
+              {projects.map((project, index) => <div key={index} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-slate-700">Project name<input value={project.name} onChange={(event) => setProjects((items) => items.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label><label className="text-xs font-medium text-slate-700">Your role<input value={project.role || ''} onChange={(event) => setProjects((items) => items.map((item, i) => i === index ? { ...item, role: event.target.value } : item))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label></div>
+                <label className="block text-xs font-medium text-slate-700">Technologies<textarea rows={1} value={project.technologies.join(', ')} onChange={(event) => setProjects((items) => items.map((item, i) => i === index ? { ...item, technologies: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) } : item))} placeholder="React, Python, PostgreSQL" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <label className="block text-xs font-medium text-slate-700">Description / outcomes<textarea rows={3} maxLength={5000} value={project.description || ''} onChange={(event) => setProjects((items) => items.map((item, i) => i === index ? { ...item, description: event.target.value } : item))} placeholder="What did you build and what was your contribution? Use separate lines for bullets." className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <label className="block text-xs font-medium text-slate-700">Project link<input type="url" value={project.url || ''} onChange={(event) => setProjects((items) => items.map((item, i) => i === index ? { ...item, url: event.target.value } : item))} placeholder="https://…" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <button type="button" onClick={() => setProjects((items) => items.filter((_, i) => i !== index))} className="text-xs font-semibold text-rose-700">Remove project</button>
+              </div>)}
+            </div>
+
+            <div className="space-y-3 border-t border-slate-200 pt-5">
+              <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold text-slate-900">Certifications <span className="font-normal text-slate-500">(optional)</span></h3><p className="mt-1 text-xs text-slate-500">Include credentials relevant to your target role.</p></div><button type="button" onClick={() => setCertifications((items) => [...items, { name: '' }])} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold"><Plus className="h-3.5 w-3.5" /> Add certification</button></div>
+              {certifications.map((certification, index) => <div key={index} className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 sm:grid-cols-2">
+                <label className="text-xs font-medium text-slate-700">Credential name<input value={certification.name} onChange={(event) => setCertifications((items) => items.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <label className="text-xs font-medium text-slate-700">Issuing organization<input value={certification.issuer || ''} onChange={(event) => setCertifications((items) => items.map((item, i) => i === index ? { ...item, issuer: event.target.value } : item))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <label className="text-xs font-medium text-slate-700">Issue date<input value={certification.issue_date || ''} onChange={(event) => setCertifications((items) => items.map((item, i) => i === index ? { ...item, issue_date: event.target.value } : item))} placeholder="2025" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <label className="text-xs font-medium text-slate-700">Credential link<input type="url" value={certification.credential_url || ''} onChange={(event) => setCertifications((items) => items.map((item, i) => i === index ? { ...item, credential_url: event.target.value } : item))} placeholder="https://…" className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm" /></label>
+                <button type="button" onClick={() => setCertifications((items) => items.filter((_, i) => i !== index))} className="text-left text-xs font-semibold text-rose-700">Remove certification</button>
+              </div>)}
+            </div>
           </div>
         )}
 
@@ -621,6 +681,13 @@ export const OnboardingWizard: React.FC = () => {
                 <p className="text-xs text-slate-500 mt-1">Practice spoken articulation and audio interview delivery.</p>
                 <p className="text-[11px] font-medium text-purple-700 mt-2">Requires a configured voice provider.</p>
               </div>
+            </div>
+            <div className="max-w-xl border-t border-slate-200 pt-5">
+              <label htmlFor="avatar-gender" className="block text-sm font-semibold text-slate-800">Avatar appearance <span className="font-normal text-slate-500">(optional)</span></label>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Choose how your small profile avatar should look. This is only used to render the avatar; it is not used for recommendations or scoring. Leave blank for a neutral avatar.</p>
+              <select id="avatar-gender" value={avatarGender} onChange={(event) => setAvatarGender(event.target.value as typeof avatarGender)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm">
+                <option value="">Neutral avatar</option><option value="woman">Woman</option><option value="man">Man</option><option value="non_binary">Non-binary</option><option value="prefer_not_to_say">Prefer not to say</option>
+              </select>
             </div>
           </div>
         )}

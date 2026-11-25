@@ -73,6 +73,8 @@ class CandidateService:
             profile.candidate_type = request.candidate_type
         if request.sub_category:
             profile.sub_category = request.sub_category
+        if request.avatar_gender is not None:
+            profile.avatar_gender = request.avatar_gender or None
         if request.industry_id:
             profile.industry_id = request.industry_id
         if request.current_company is not None:
@@ -91,6 +93,20 @@ class CandidateService:
             profile.key_skills = request.key_skills
         if request.career_goals is not None:
             profile.career_goals = request.career_goals
+        if request.professional_summary is not None:
+            profile.professional_summary = request.professional_summary
+        if request.phone is not None:
+            profile.phone = request.phone
+        if request.location is not None:
+            profile.location = request.location
+        if request.linkedin_url is not None:
+            profile.linkedin_url = request.linkedin_url
+        if request.github_url is not None:
+            profile.github_url = request.github_url
+        if request.certifications is not None:
+            profile.certifications = [item.model_dump(exclude_none=True) for item in request.certifications]
+        if request.projects is not None:
+            profile.projects = [item.model_dump(exclude_none=True) for item in request.projects]
         if request.interview_rounds_preferred is not None:
             profile.interview_rounds_preferred = request.interview_rounds_preferred
         if request.interaction_preference:

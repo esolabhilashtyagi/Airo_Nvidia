@@ -12,6 +12,7 @@ from app.models.assessment import Assessment, AssessmentQuestion, AssessmentAtte
 from app.models.interview import MockInterview, InterviewQuestion, InterviewResponse, InterviewEvaluation, InterviewStatus
 from app.models.coach import CoachConversation, CoachMessage, MessageSender
 from app.models.system import Notification, UserActivity, AuditLog, ResumeRateLimit, AuthAttemptLimit, RefreshTokenSession, PasswordResetToken
+from app.models.payment import ATSAccessPayment, ResumeTemplatePayment
 
 __all__ = [
     "Base",
@@ -73,4 +74,6 @@ __all__ = [
     "AuthAttemptLimit",
     "RefreshTokenSession",
     "PasswordResetToken",
+    "ATSAccessPayment",
+    "ResumeTemplatePayment",
 ]

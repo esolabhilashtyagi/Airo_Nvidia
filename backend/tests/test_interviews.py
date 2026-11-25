@@ -1,5 +1,7 @@
 import pytest
 import uuid
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from httpx import AsyncClient
 from app.services import interview_service
 
@@ -7,6 +9,33 @@ from app.services import interview_service
 class UnavailableProvider:
     def is_available(self) -> bool:
         return False
+
+
+def test_final_interview_report_pairs_saved_and_refined_answers_after_completion():
+    interview_id = uuid.uuid4()
+    interview = SimpleNamespace(
+        id=interview_id,
+        completed_at=datetime.now(timezone.utc),
+        questions=[SimpleNamespace(
+            order_index=1,
+            question_text="How would you approach the problem?",
+            response=SimpleNamespace(candidate_answer="I would test the failure path.")
+        )],
+    )
+    evaluation = SimpleNamespace(
+        id=uuid.uuid4(), mock_interview_id=interview_id, overall_score=80,
+        technical_score=80, domain_score=80, communication_score=80, structure_score=80,
+        evaluation_status="evaluated", evaluation_provenance="ai", key_strengths=[],
+        improvement_areas=[], detailed_feedback={},
+        question_evaluations=[{"question_number": 1, "refined_answer": "I would define and test failure paths."}],
+    )
+
+    report = interview_service.InterviewService._report(interview, evaluation)
+
+    assert len(report.responses) == 1
+    assert report.responses[0].question == "How would you approach the problem?"
+    assert report.responses[0].candidate_answer == "I would test the failure path."
+    assert report.responses[0].refined_answer == "I would define and test failure paths."
 
 
 @pytest.mark.asyncio

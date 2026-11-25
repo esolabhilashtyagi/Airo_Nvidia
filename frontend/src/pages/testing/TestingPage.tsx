@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Clock3, Flag, History, Play, Send } from 'lucide-react';
 import { industriesApi } from '../../api/candidates';
 import { testingApi } from '../../api/services';
@@ -15,6 +16,8 @@ function formatTime(seconds: number) {
 }
 
 export function TestingPage() {
+  const [searchParams] = useSearchParams();
+  const requestedAssessmentId = searchParams.get('assessmentId');
   const { user } = useAuth();
   const userSessionKey = user?.id ? assessmentSessionKey(user.id) : null;
   const [industries, setIndustries] = useState<Industry[]>([]);
@@ -24,6 +27,9 @@ export function TestingPage() {
   const [difficulty, setDifficulty] = useState('');
   const [subject, setSubject] = useState('');
   const [topic, setTopic] = useState('');
+  const [topicSuggestions, setTopicSuggestions] = useState<Awaited<ReturnType<typeof testingApi.suggestTopics>>['suggestions']>([]);
+  const [suggestionSource, setSuggestionSource] = useState('');
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [round, setRound] = useState('');
   const [number, setNumber] = useState('');
   const [duration, setDuration] = useState(20);
@@ -71,13 +77,33 @@ export function TestingPage() {
       if (!mounted) return;
       setIndustries(items);
       setHistory(previous);
-      const storedAssessment = userSessionKey ? localStorage.getItem(userSessionKey) : null;
+      const storedAssessment = requestedAssessmentId || (userSessionKey ? localStorage.getItem(userSessionKey) : null);
+      if (requestedAssessmentId && userSessionKey) localStorage.setItem(userSessionKey, requestedAssessmentId);
       if (storedAssessment) await loadAttempt(storedAssessment);
     }).catch((caught) => {
       if (mounted) setError(caught instanceof Error ? caught.message : 'Testing data could not be loaded.');
     }).finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
-  }, [loadAttempt, userSessionKey]);
+  }, [loadAttempt, userSessionKey, requestedAssessmentId]);
+
+  useEffect(() => {
+    if (!industryId || subject.trim().length < 2 || active || result) {
+      setTopicSuggestions([]);
+      return;
+    }
+    let current = true;
+    const timer = window.setTimeout(() => {
+      setSuggestionsLoading(true);
+      void testingApi.suggestTopics(subject.trim()).then((response) => {
+        if (!current) return;
+        setTopicSuggestions(response.suggestions);
+        setSuggestionSource(response.ai_status);
+      }).catch(() => {
+        if (current) setTopicSuggestions([]);
+      }).finally(() => { if (current) setSuggestionsLoading(false); });
+    }, 350);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [industryId, subject, active, result]);
 
   useEffect(() => {
     if (!active || !attemptId || result) return;
@@ -210,7 +236,7 @@ export function TestingPage() {
 
   return (
     <section className="space-y-6">
-      <header className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-6 text-slate-900 shadow-sm shadow-violet-950/5 sm:p-8"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-800">Testing mode</p><h1 className="mt-2 text-3xl font-bold text-slate-950">Practice under real time limits</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Published Question Bank questions are used first; the configured AI provider can fill a shortage with clearly labeled, unreviewed practice questions. Objective results are deterministic; subjective or coding results may remain unscored when required integrations are unavailable.</p></header>
+      <header className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-6 text-slate-900 shadow-sm shadow-violet-950/5 sm:p-8"><p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-800">Testing mode</p><h1 className="mt-2 text-3xl font-bold text-slate-950">Practice under real time limits</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Configure a timed, scored assessment with answer review after submission. Mock interviews are conversational role-play with follow-up questions and coaching.</p></header>
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
 
       {result ? <article className="rounded-xl border bg-white p-6 shadow-sm">
@@ -228,19 +254,19 @@ export function TestingPage() {
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-4"><button onClick={() => setIndex((value) => Math.max(0, value - 1))} disabled={index === 0} className="inline-flex items-center gap-1 rounded-lg border px-4 py-2 text-sm disabled:opacity-40"><ChevronLeft className="h-4 w-4" />Previous</button><div className="flex flex-wrap gap-2"><button onClick={() => setIndex((value) => Math.min(active.questions.length - 1, value + 1))} disabled={index >= active.questions.length - 1} className="inline-flex items-center gap-1 rounded-lg border px-4 py-2 text-sm disabled:opacity-40">Next<ChevronRight className="h-4 w-4" /></button><button onClick={() => setConfirmSubmit(true)} className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white"><Send className="h-4 w-4" />Submit</button></div></div>
         <div className="mt-4 flex flex-wrap gap-2">{active.questions.map((question, questionIndex) => <button key={question.id} onClick={() => setIndex(questionIndex)} aria-label={`Go to question ${questionIndex + 1}`} className={`h-9 w-9 rounded-lg border text-xs font-semibold ${questionIndex === index ? 'border-violet-700 bg-violet-700 text-white' : answers[question.id]?.is_marked_for_review ? 'border-purple-400 bg-purple-50 text-purple-800' : 'bg-white text-slate-700'}`}>{questionIndex + 1}</button>)}</div>
         {confirmSubmit && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-500/20 p-4 backdrop-blur-[1px]"><div role="dialog" aria-modal="true" aria-labelledby="submit-title" className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"><h2 id="submit-title" className="text-lg font-semibold">Submit assessment?</h2><p className="mt-2 text-sm text-slate-600">You have answered {Object.values(answers).filter((answer) => answer.selected_options.length || answer.text_response.trim()).length} of {active.questions.length} questions. Saved responses will be evaluated and the attempt will close.</p><div className="mt-5 flex justify-end gap-2"><button onClick={() => setConfirmSubmit(false)} className="rounded-lg border px-4 py-2 text-sm">Continue test</button><button onClick={() => void submit()} disabled={saving} className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800">Submit now</button></div></div></div>}
-      </article> : assessmentId ? <article className="rounded-xl border bg-white p-6 shadow-sm"><p className="text-xs font-semibold uppercase text-violet-700">Instructions</p><h2 className="mt-2 text-xl font-bold">Your assessment is ready</h2>{aiGeneratedQuestionCount > 0 && <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This assessment includes {aiGeneratedQuestionCount} AI-generated question(s) that have not yet been editorially reviewed. They are practice material, not approved Question Bank content.</p>}<ul className="mt-4 list-inside list-disc space-y-2 text-sm text-slate-700"><li>The backend timer controls the deadline; refresh recovery uses the saved attempt.</li><li>Your answers autosave as you work. Objective questions are marked deterministically.</li><li>Subjective or coding evaluations may be unavailable without their provider; unavailable answers are saved without fabricated scores.</li><li>Answer keys and explanations appear only after final submission.</li></ul><button onClick={() => void begin()} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-violet-700 px-5 py-2.5 font-semibold text-white"><Play className="h-4 w-4" />Start timed assessment</button></article> : <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <article className="rounded-xl border bg-white p-5 shadow-sm sm:p-6"><h2 className="text-lg font-semibold">Configure your assessment</h2><p className="mt-1 text-sm text-slate-600">Published Question Bank content is used first. The configured AI provider can generate any remaining practice questions until enough approved questions are available. Generated questions are clearly labeled and remain unreviewed drafts.</p><form onSubmit={(event) => { event.preventDefault(); void configure(); }} className="mt-5 grid gap-4 sm:grid-cols-2">
+      </article> : assessmentId ? <article className="rounded-xl border bg-white p-6 shadow-sm"><p className="text-xs font-semibold uppercase text-violet-700">Instructions</p><h2 className="mt-2 text-xl font-bold">Your assessment is ready</h2>{aiGeneratedQuestionCount > 0 && <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">This assessment includes {aiGeneratedQuestionCount} AI-generated question(s) that have not yet been editorially reviewed. They are practice material, not approved Question Bank content.</p>}<ul className="mt-4 list-inside list-disc space-y-2 text-sm text-slate-700"><li>The backend timer controls the deadline; refresh recovery uses the saved attempt.</li><li>Your answers autosave as you work. Objective questions are marked deterministically.</li><li>Subjective or coding evaluations may be unavailable without their provider; unavailable answers are saved without fabricated scores.</li><li>Answer keys and explanations appear only after final submission.</li></ul><button onClick={() => void begin()} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-violet-700 px-5 py-2.5 font-semibold text-white"><Play className="h-4 w-4" />Start timed assessment</button></article> : <div className="space-y-5">
+        <article className="rounded-xl border bg-white p-5 shadow-sm sm:p-6"><h2 className="text-lg font-semibold">Configure your assessment</h2><p className="mt-1 text-sm text-slate-600">Published Question Bank content is used first; if matching questions are insufficient, the configured provider can generate clearly labeled practice questions.</p><form onSubmit={(event) => { event.preventDefault(); void configure(); }} className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-medium"><RequiredLabel>Industry</RequiredLabel><select required value={industryId} onChange={(event) => { setIndustryId(event.target.value); setRoleId(''); }} className="mt-1 block w-full rounded-lg border px-3 py-2"><option value="">Choose industry</option>{industries.map((industry) => <option key={industry.id} value={industry.id}>{industry.name}</option>)}</select></label>
-          <label className="text-sm font-medium">Job role<select value={roleId} onChange={(event) => setRoleId(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2"><option value="">Any available role</option>{selectedIndustry?.job_roles.map((role) => <option key={role.id} value={role.id}>{role.title}</option>)}</select></label>
-          <label className="text-sm font-medium">Subject<input value={subject} onChange={(event) => setSubject(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2" placeholder="Any subject" /></label>
-          <label className="text-sm font-medium">Topic<input value={topic} onChange={(event) => setTopic(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2" placeholder="Any topic" /></label>
-          <label className="text-sm font-medium">Difficulty<select value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2"><option value="">Mixed</option>{['beginner', 'intermediate', 'advanced', 'expert'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-          <label className="text-sm font-medium">Interview round<input value={round} onChange={(event) => setRound(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2" placeholder="Any round" /></label>
+          <label className="text-sm font-medium"><RequiredLabel>Job role</RequiredLabel><select required value={roleId} onChange={(event) => setRoleId(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2"><option value="">Choose a role</option>{selectedIndustry?.job_roles.map((role) => <option key={role.id} value={role.id}>{role.title}</option>)}</select></label>
+          <label className="text-sm font-medium"><RequiredLabel>Subject</RequiredLabel><input required value={subject} onChange={(event) => { setSubject(event.target.value); setTopic(''); }} className="mt-1 block w-full rounded-lg border px-3 py-2" placeholder="e.g. System Design" />{suggestionsLoading && <span role="status" className="mt-1 block text-xs font-normal text-slate-500">Finding relevant topics…</span>}</label>
+          <label className="text-sm font-medium"><RequiredLabel>Topic</RequiredLabel><input required value={topic} onChange={(event) => setTopic(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2" placeholder="Choose a suggestion or enter a topic" />{topicSuggestions.length > 0 && <span className="mt-2 block space-y-1.5">{topicSuggestions.map((item) => <button type="button" key={`${item.subject}-${item.topic}`} onClick={() => setTopic(item.topic)} className="mr-1 inline-flex rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs text-violet-800">{item.topic}</button>)}<span className="block text-[11px] font-normal text-slate-500">{suggestionSource === 'available' ? 'AI suggestions, checked against your profile and practice history' : 'Suggestions from the active topic catalog'}</span></span>}</label>
+          <label className="text-sm font-medium"><RequiredLabel>Difficulty</RequiredLabel><select required value={difficulty} onChange={(event) => setDifficulty(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2"><option value="">Choose difficulty</option>{['beginner', 'intermediate', 'advanced', 'expert', 'mixed'].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label className="text-sm font-medium"><RequiredLabel>Interview round</RequiredLabel><input required value={round} onChange={(event) => setRound(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2" placeholder="e.g. Technical" /></label>
           <label className="text-sm font-medium"><RequiredLabel>Questions</RequiredLabel><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} aria-label="Questions" placeholder="e.g. 10" value={number} onChange={(event) => { const value = normalizeWholeNumberInput(event.target.value); if (value !== null) setNumber(value); }} aria-invalid={!isWholeNumberInRange(number, 1, 50)} className="mt-1 block w-full rounded-lg border px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">Choose the number you want (1–50). Backspace clears the field completely.</span></label>
           <label className="text-sm font-medium"><RequiredLabel>Duration (minutes)</RequiredLabel><input type="number" min={5} max={180} value={duration} onChange={(event) => setDuration(Number(event.target.value))} className="mt-1 block w-full rounded-lg border px-3 py-2" /></label>
           <label className="text-sm font-medium"><RequiredLabel>Marks per question</RequiredLabel><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={3} aria-label="Marks per question" value={marks} onChange={(event) => { const value = normalizeWholeNumberInput(event.target.value); if (value !== null) setMarks(value); }} aria-invalid={!isWholeNumberInRange(marks, 1, 100)} className="mt-1 block w-full rounded-lg border px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">Whole marks only (1–100).</span></label>
-          <label className="text-sm font-medium"><RequiredLabel>Negative marks</RequiredLabel><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={3} aria-label="Negative marks" value={negativeMarks} onChange={(event) => { const value = normalizeWholeNumberInput(event.target.value); if (value !== null) setNegativeMarks(value); }} aria-invalid={!isWholeNumberInRange(negativeMarks, 0, 100)} className="mt-1 block w-full rounded-lg border px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">Whole marks only (0–100).</span></label>
-          <button disabled={configuring || !industryId || !isWholeNumberInRange(number, 1, 50) || !isWholeNumberInRange(marks, 1, 100) || !isWholeNumberInRange(negativeMarks, 0, 100)} className="sm:col-span-2 rounded-lg bg-violet-700 px-4 py-2.5 font-semibold text-white disabled:opacity-50">{configuring ? 'Preparing questions…' : 'Prepare assessment'}</button>
+          <label className="text-sm font-medium">Negative marks<input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={3} aria-label="Negative marks" value={negativeMarks} onChange={(event) => { const value = normalizeWholeNumberInput(event.target.value); if (value !== null) setNegativeMarks(value); }} aria-invalid={!isWholeNumberInRange(negativeMarks, 0, 100)} className="mt-1 block w-full rounded-lg border px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">Whole marks only (0–100).</span></label>
+          <button disabled={configuring || !industryId || !roleId || !subject.trim() || !topic.trim() || !difficulty || !round.trim() || !isWholeNumberInRange(number, 1, 50) || !isWholeNumberInRange(marks, 1, 100) || !isWholeNumberInRange(negativeMarks, 0, 100)} className="sm:col-span-2 rounded-lg bg-violet-700 px-4 py-2.5 font-semibold text-white disabled:opacity-50">{configuring ? 'Preparing questions…' : 'Prepare assessment'}</button>
         </form></article>
         <article className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex items-center gap-2"><History className="h-5 w-5 text-violet-700" /><h2 className="font-semibold">Assessment history</h2></div>{history.length ? <ul className="mt-4 space-y-2">{history.map((item) => <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 p-3"><div><p className="text-sm font-medium">{item.assessment_title}</p><p className="text-xs text-slate-500">{item.status} · {item.evaluation_status ?? 'result pending'}</p></div>{item.completed_at && <button onClick={() => void openResult(item.id)} className="text-sm font-semibold text-violet-700">View report</button>}</li>)}</ul> : <p className="mt-4 text-sm text-slate-500">Completed attempts will appear here.</p>}</article>
       </div>}

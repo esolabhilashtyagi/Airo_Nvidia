@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     NVIDIA_STRUCTURED_OUTPUT_MODE: str = "json_object"
     YOUTUBE_API_KEY: str = ""
     OPENALEX_BASE_URL: str = "https://api.openalex.org"
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+    ATS_ACCESS_PRICE_PAISE: int = 0
+    RESUME_TEMPLATES_PRICE_PAISE: int = 0
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.8-flash"
     AI_REQUEST_TIMEOUT_SECONDS: int = 45

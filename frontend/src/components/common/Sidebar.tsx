@@ -15,18 +15,19 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { CandidateAvatar } from './CandidateAvatar';
 
 export const Sidebar: React.FC<{ mobileOpen?: boolean; onNavigate?: () => void }> = ({ mobileOpen = false, onNavigate }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const navigationItems = [
     { name: 'Overview', to: '/dashboard', icon: LayoutDashboard },
     { name: 'My Resume', to: '/resume', icon: FileText },
-    { name: 'AI Coach & Roadmap', to: '/coach', icon: Bot, badge: 'AI' },
+    { name: 'AI Coach & Roadmap', to: '/coach', icon: Bot },
     { name: 'Question Bank', to: '/question-bank', icon: HelpCircle },
     { name: 'Learning Modules', to: '/modules', icon: BookOpen },
     { name: 'Testing Mode', to: '/testing', icon: GraduationCap },
-    { name: 'Mock Interviews', to: '/interviews', icon: Video, badge: 'AI' },
+    { name: 'Mock Interviews', to: '/interviews', icon: Video },
     { name: 'Performance Reports', to: '/reports', icon: BarChart3 },
     { name: 'My Profile', to: '/profile', icon: User },
     { name: 'Settings', to: '/settings', icon: Settings },
@@ -38,15 +39,13 @@ export const Sidebar: React.FC<{ mobileOpen?: boolean; onNavigate?: () => void }
       <aside className={`${mobileOpen ? 'flex' : 'hidden'} fixed inset-y-0 left-0 z-50 h-screen w-72 shrink-0 flex-col border-r border-violet-100 bg-white text-slate-700 select-none md:sticky md:top-0 md:z-auto md:flex`}>
         {/* Brand Header */}
         <div className="h-[5.5rem] flex items-center px-6 border-b border-violet-100 gap-3">
-          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#4d00ef] to-[#8952ff] flex items-center justify-center text-white shadow-lg shadow-violet-500/25">
-            <span className="font-black text-xl leading-none text-white select-none">A</span>
-          </div>
+          <CandidateAvatar gender={profile?.avatar_gender} size={44} label={`${user?.full_name || 'Candidate'} avatar`} />
           <div>
             <span className="font-bold text-xl text-violet-700 tracking-tight flex items-center gap-1.5">
-              Aairo
-              <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100">
+              AAIRO
+              {/* <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100">
                 Pro
-              </span>
+              </span> */}
             </span>
             <p className="text-[11px] text-slate-500">Career Learning Platform</p>
           </div>
@@ -81,11 +80,6 @@ export const Sidebar: React.FC<{ mobileOpen?: boolean; onNavigate?: () => void }
                     </span>
                     <span>{item.name}</span>
                   </div>
-                  {item.badge && (
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-violet-50 text-violet-700'}`}>
-                      {item.badge}
-                    </span>
-                  )}
                 </>
               )}
             </NavLink>
@@ -118,9 +112,7 @@ export const Sidebar: React.FC<{ mobileOpen?: boolean; onNavigate?: () => void }
         {/* User Footer Profile */}
         <div className="border-t border-violet-100 bg-white p-4">
           <div className="flex items-center gap-3 px-2 py-1.5">
-            <div className="w-9 h-9 rounded-full bg-violet-50 border border-violet-100 flex items-center justify-center font-bold text-xs text-violet-700">
-              {user?.full_name ? user.full_name[0].toUpperCase() : 'U'}
-            </div>
+            <CandidateAvatar gender={profile?.avatar_gender} size={36} label={`${user?.full_name || 'Candidate'} avatar`} />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-900 truncate">{user?.full_name || 'Candidate'}</p>
               <p className="text-[11px] text-slate-500 truncate">{user?.email || ''}</p>

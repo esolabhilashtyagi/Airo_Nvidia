@@ -42,6 +42,13 @@ class InterviewRespondRequest(BaseModel):
     duration_seconds: int = Field(default=0, ge=0, le=7200)
 
 
+class InterviewResponseReview(BaseModel):
+    question_number: int
+    question: str
+    candidate_answer: str
+    refined_answer: Optional[str] = None
+
+
 class InterviewReportResponse(BaseModel):
     id: uuid.UUID
     mock_interview_id: uuid.UUID
@@ -56,6 +63,7 @@ class InterviewReportResponse(BaseModel):
     improvement_areas: List[str] = Field(default_factory=list)
     detailed_feedback: Dict[str, Any] = Field(default_factory=dict)
     question_evaluations: List[Dict[str, Any]] = Field(default_factory=list)
+    responses: List[InterviewResponseReview] = Field(default_factory=list)
     completed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

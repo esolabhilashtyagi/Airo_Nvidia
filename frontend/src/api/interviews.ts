@@ -13,6 +13,12 @@ export interface InterviewReport {
   structure_score?: number | null; evaluation_status: string; evaluation_provenance: string;
   key_strengths: string[]; improvement_areas: string[]; detailed_feedback: Record<string, unknown>;
   question_evaluations: Array<Record<string, unknown>>; completed_at?: string | null;
+  responses: Array<{
+    question_number: number;
+    question: string;
+    candidate_answer: string;
+    refined_answer?: string | null;
+  }>;
 }
 export const interviewsApi = {
   setup: (data: Record<string, unknown>) => apiClient<InterviewSession>('/interviews/setup', { method: 'POST', body: JSON.stringify(data) }),

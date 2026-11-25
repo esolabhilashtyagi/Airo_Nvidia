@@ -6,6 +6,10 @@ import { MemoryRouter } from 'react-router-dom';
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ user: { full_name: 'Aishwarya', email: 'aishwarya@example.com' } }),
 }));
+vi.mock('../../api/services', () => ({ paymentsApi: {
+  atsAccess: vi.fn().mockResolvedValue({ has_access: false }),
+  resumeTemplateAccess: vi.fn().mockResolvedValue({ has_access: false }),
+} }));
 
 import { SettingsPage } from './SettingsPage';
 
@@ -20,5 +24,7 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Change password' })).toBeTruthy();
     expect(screen.getByText(/Use this while signed in and you know your current password/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Request reset instructions' }).getAttribute('href')).toBe('/forgot-password');
+    expect(screen.getByRole('heading', { name: 'Feature access' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Edit profile' }).getAttribute('href')).toBe('/profile');
   });
 });

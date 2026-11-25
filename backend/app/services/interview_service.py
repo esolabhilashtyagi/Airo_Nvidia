@@ -19,7 +19,7 @@ from app.models.question import ApprovalStatus, Question, QuestionType
 from app.models.taxonomy import Industry, JobRole
 from app.models.candidate import CandidateProfile
 from app.schemas.interview import (
-    InterviewReportResponse, InterviewRespondRequest,
+    InterviewReportResponse, InterviewRespondRequest, InterviewResponseReview,
     InterviewSessionResponse, InterviewSetupRequest,
 )
 
@@ -423,6 +423,23 @@ class InterviewService:
 
     @staticmethod
     def _report(interview: MockInterview, evaluation: InterviewEvaluation) -> InterviewReportResponse:
+        evaluations_by_question = {
+            item.get("question_number"): item
+            for item in (evaluation.question_evaluations or [])
+            if isinstance(item, dict) and isinstance(item.get("question_number"), int)
+        }
+        responses = []
+        for question_number, question in enumerate(sorted(interview.questions, key=lambda item: item.order_index), start=1):
+            if not question.response:
+                continue
+            item = evaluations_by_question.get(question_number, {})
+            refined_answer = item.get("refined_answer") if isinstance(item, dict) else None
+            responses.append(InterviewResponseReview(
+                question_number=question_number,
+                question=question.question_text,
+                candidate_answer=question.response.candidate_answer,
+                refined_answer=refined_answer.strip() if isinstance(refined_answer, str) and refined_answer.strip() else None,
+            ))
         return InterviewReportResponse(
             id=evaluation.id,
             mock_interview_id=interview.id,
@@ -437,6 +454,7 @@ class InterviewService:
             improvement_areas=evaluation.improvement_areas,
             detailed_feedback=evaluation.detailed_feedback,
             question_evaluations=evaluation.question_evaluations,
+            responses=responses,
             completed_at=interview.completed_at,
         )
 
@@ -445,7 +463,10 @@ class InterviewService:
         interview = await db.scalar(select(MockInterview).where(
             MockInterview.id == interview_id,
             MockInterview.candidate_profile_id == candidate_profile_id,
-        ).options(selectinload(MockInterview.evaluation)))
+        ).options(
+            selectinload(MockInterview.evaluation),
+            selectinload(MockInterview.questions).selectinload(InterviewQuestion.response),
+        ))
         if not interview or not interview.evaluation:
             raise HTTPException(status_code=404, detail="Interview report not found")
         return InterviewService._report(interview, interview.evaluation)

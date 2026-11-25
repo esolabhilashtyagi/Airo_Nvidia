@@ -12,8 +12,9 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 
-ResumeTemplate = Literal["modern", "classic", "compact"]
+ResumeTemplate = Literal["standard", "modern", "classic", "compact"]
 TEMPLATES: dict[str, dict[str, Any]] = {
+    "standard": {"accent": "334155", "ink": "172033", "font": "Arial", "name_size": 23, "top": 0.62, "bottom": 0.62, "section_before": 10, "section_after": 4, "center": False},
     "modern": {"accent": "5B21B6", "ink": "172554", "font": "Arial", "name_size": 25, "top": 0.62, "bottom": 0.62, "section_before": 10, "section_after": 4, "center": False},
     "classic": {"accent": "17365D", "ink": "1F2937", "font": "Georgia", "name_size": 22, "top": 0.72, "bottom": 0.72, "section_before": 12, "section_after": 5, "center": True},
     "compact": {"accent": "0F766E", "ink": "1F2937", "font": "Arial", "name_size": 20, "top": 0.45, "bottom": 0.45, "section_before": 7, "section_after": 3, "center": False},
@@ -23,14 +24,17 @@ TEMPLATES: dict[str, dict[str, Any]] = {
 def build_profile_resume_docx(user: Any, profile: Any, template: ResumeTemplate = "modern") -> bytes:
     """Build a styled DOCX using only saved profile fields and user-written text."""
     if template not in TEMPLATES:
-        raise ValueError("Choose the modern, classic, or compact resume template.")
+        raise ValueError("Choose a supported resume layout.")
     style = TEMPLATES[template]
     education = list(profile.education_history or [])
     experience = list(profile.experience_history or [])
     skills = list(dict.fromkeys(str(skill).strip() for skill in (profile.key_skills or []) if str(skill).strip()))
     objective = (profile.career_goals or "").strip()
-    if not (education or experience or skills or objective):
-        raise ValueError("Add education, experience, skills, or a career objective to your profile before generating a resume.")
+    summary = (getattr(profile, "professional_summary", None) or "").strip()
+    projects = list(getattr(profile, "projects", None) or [])
+    certifications = list(getattr(profile, "certifications", None) or [])
+    if not (education or experience or skills or objective or summary or projects or certifications):
+        raise ValueError("Add profile details before generating a resume.")
 
     document = Document()
     section = document.sections[0]
@@ -72,7 +76,10 @@ def build_profile_resume_docx(user: Any, profile: Any, template: ResumeTemplate 
         role_run.font.size = Pt(9 if template == "compact" else 10)
         role_run.font.color.rgb = RGBColor.from_string(style["accent"])
 
-    contact = [value.strip() for value in (getattr(user, "email", None),) if isinstance(value, str) and value.strip()]
+    contact = [value.strip() for value in (
+        getattr(user, "email", None), getattr(profile, "phone", None), getattr(profile, "location", None),
+        getattr(profile, "linkedin_url", None), getattr(profile, "github_url", None),
+    ) if isinstance(value, str) and value.strip()]
     if contact:
         contact_line = document.add_paragraph("  ·  ".join(contact))
         contact_line.alignment = alignment
@@ -99,7 +106,10 @@ def build_profile_resume_docx(user: Any, profile: Any, template: ResumeTemplate 
                 paragraph = document.add_paragraph(content)
                 paragraph.paragraph_format.space_after = Pt(3)
 
-    if objective:
+    if summary:
+        add_heading("Profile Summary")
+        add_description(summary)
+    elif objective:
         add_heading("Career Objective")
         add_description(objective)
 
@@ -151,6 +161,33 @@ def build_profile_resume_docx(user: Any, profile: Any, template: ResumeTemplate 
             if item.grade:
                 document.add_paragraph(f"Grade: {item.grade.strip()}")
 
+    if projects:
+        add_heading("Projects")
+        for project in projects:
+            if not isinstance(project, dict):
+                continue
+            title = str(project.get("name") or "").strip()
+            role = str(project.get("role") or "").strip()
+            if title:
+                paragraph = document.add_paragraph()
+                paragraph.paragraph_format.keep_with_next = True
+                paragraph.add_run(" — ".join(part for part in (title, role) if part)).bold = True
+            technologies = project.get("technologies")
+            if isinstance(technologies, list) and technologies:
+                document.add_paragraph("Technologies: " + ", ".join(str(item) for item in technologies if str(item).strip()))
+            add_description(str(project.get("description") or ""))
+            if project.get("url"):
+                document.add_paragraph(str(project["url"]))
+
+    if certifications:
+        add_heading("Certifications")
+        for certification in certifications:
+            if not isinstance(certification, dict):
+                continue
+            label = " — ".join(str(value).strip() for value in (certification.get("name"), certification.get("issuer"), certification.get("issue_date")) if value and str(value).strip())
+            if label:
+                document.add_paragraph(label)
+
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
@@ -161,13 +198,16 @@ def build_profile_resume_pdf(user: Any, profile: Any, template: ResumeTemplate =
     if fitz is None:
         raise ValueError("PDF resume generation requires PyMuPDF (fitz) runtime support.")
     if template not in TEMPLATES:
-        raise ValueError("Choose the modern, classic, or compact resume template.")
+        raise ValueError("Choose a supported resume layout.")
     education = list(profile.education_history or [])
     experience = list(profile.experience_history or [])
     skills = list(dict.fromkeys(str(skill).strip() for skill in (profile.key_skills or []) if str(skill).strip()))
     objective = (profile.career_goals or "").strip()
-    if not (education or experience or skills or objective):
-        raise ValueError("Add education, experience, skills, or a career objective to your profile before generating a resume.")
+    summary = (getattr(profile, "professional_summary", None) or "").strip()
+    projects = list(getattr(profile, "projects", None) or [])
+    certifications = list(getattr(profile, "certifications", None) or [])
+    if not (education or experience or skills or objective or summary or projects or certifications):
+        raise ValueError("Add profile details before generating a resume.")
 
     style = TEMPLATES[template]
     accent_hex = style["accent"]
@@ -259,8 +299,7 @@ def build_profile_resume_pdf(user: Any, profile: Any, template: ResumeTemplate =
     page.insert_text((name_x, y + name_size), name, fontname="hebo", fontsize=name_size, color=ink)
     y += name_size + 4
     target_role = (profile.target_role or "").strip()
-    email = (getattr(user, "email", None) or "").strip()
-    header_items = [item for item in (target_role, email) if item]
+    header_items = [item.strip() for item in (target_role, getattr(user, "email", None), getattr(profile, "phone", None), getattr(profile, "location", None), getattr(profile, "linkedin_url", None), getattr(profile, "github_url", None)) if isinstance(item, str) and item.strip()]
     for item in header_items:
         text_block(item, size=9 if template != "compact" else 8.3, ink_color=accent if item == target_role else (0.39, 0.44, 0.52), bold=(item == target_role), gap=1.2, align=1 if centered else 0)
     y += 4
@@ -294,7 +333,10 @@ def build_profile_resume_pdf(user: Any, profile: Any, template: ResumeTemplate =
                 y += line_height
             y += 2
 
-    if objective:
+    if summary:
+        section("Profile Summary")
+        description(summary)
+    elif objective:
         section("Career Objective")
         description(objective)
     if skills:
@@ -324,6 +366,30 @@ def build_profile_resume_pdf(user: Any, profile: Any, template: ResumeTemplate =
             if item.grade:
                 text_block(f"Grade: {item.grade.strip()}", size=body_size - 0.5, gap=2)
 
+    if projects:
+        section("Projects")
+        for project in projects:
+            if not isinstance(project, dict):
+                continue
+            title = " — ".join(str(value).strip() for value in (project.get("name"), project.get("role")) if value and str(value).strip())
+            if title:
+                text_block(title, size=body_size + 0.2, ink_color=ink, bold=True, gap=1)
+            technologies = project.get("technologies")
+            if isinstance(technologies, list) and technologies:
+                text_block("Technologies: " + ", ".join(str(value) for value in technologies if str(value).strip()), size=body_size - 0.2, gap=1)
+            description(str(project.get("description") or ""))
+            if project.get("url"):
+                text_block(str(project["url"]), size=body_size - 0.3, ink_color=accent, gap=2)
+
+    if certifications:
+        section("Certifications")
+        for certification in certifications:
+            if not isinstance(certification, dict):
+                continue
+            label = " — ".join(str(value).strip() for value in (certification.get("name"), certification.get("issuer"), certification.get("issue_date")) if value and str(value).strip())
+            if label:
+                text_block(label, size=body_size, gap=2)
+
     for page_number, output_page in enumerate(doc, start=1):
         output_page.draw_line((left, page_height - 28), (page_width - right, page_height - 28), color=(0.87, 0.89, 0.92), width=0.5)
         output_page.insert_text((page_width - right - 48, page_height - 15), f"{page_number}", fontname="helv", fontsize=8, color=(0.43, 0.47, 0.54))
@@ -332,7 +398,7 @@ def build_profile_resume_pdf(user: Any, profile: Any, template: ResumeTemplate =
     return content
 
 
-def safe_resume_filename(full_name: str, template: str = "modern", file_format: str = "docx") -> str:
+def safe_resume_filename(full_name: str, template: str = "standard", file_format: str = "pdf") -> str:
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", full_name).strip("_") or "candidate"
     template_suffix = template if template in TEMPLATES else "resume"
     extension = file_format if file_format in {"pdf", "docx"} else "docx"

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Search, Bell, Sparkles, LogOut, User as UserIcon, Menu } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Bell, LogOut, User as UserIcon, Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { systemApi } from '../../api/services';
@@ -9,16 +9,9 @@ export const Navbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick }) 
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [aiStatus, setAiStatus] = useState<'checking' | 'configured' | 'unconfigured' | 'unavailable'>('checking');
   const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; is_read: boolean; link_url?: string | null }>>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsError, setNotificationsError] = useState('');
-
-  useEffect(() => {
-    systemApi.getAiStatus()
-      .then((status) => setAiStatus(status.configured ? 'configured' : 'unconfigured'))
-      .catch(() => setAiStatus('unavailable'));
-  }, []);
 
   const openNotifications = async () => {
     const opening = !showNotifications;
@@ -65,13 +58,6 @@ export const Navbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick }) 
             )}
           </div>
         )}
-
-        {/* AI Provider Status Pill */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200" title="Configured AI provider status">
-          <Sparkles className="w-3.5 h-3.5 text-violet-500" />
-          <span className="hidden sm:inline">AI Engine:</span>
-          <span className="text-slate-900 font-semibold">{{ checking: 'Checking', configured: 'Configured', unconfigured: 'Setup required', unavailable: 'Status unavailable' }[aiStatus]}</span>
-        </div>
 
         {/* Notifications Bell */}
         <div className="relative">

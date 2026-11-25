@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.taxonomy import CompanyResponse, IndustryResponse
 
@@ -30,6 +30,21 @@ class ExperienceCreate(BaseModel):
     description: Optional[str] = None
 
 
+class ProjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    role: Optional[str] = Field(default=None, max_length=255)
+    technologies: List[str] = Field(default_factory=list, max_length=30)
+    description: Optional[str] = Field(default=None, max_length=5000)
+    url: Optional[str] = Field(default=None, max_length=500)
+
+
+class CertificationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    issuer: Optional[str] = Field(default=None, max_length=255)
+    issue_date: Optional[str] = Field(default=None, max_length=50)
+    credential_url: Optional[str] = Field(default=None, max_length=500)
+
+
 class ExperienceResponse(ExperienceCreate):
     id: uuid.UUID
     candidate_profile_id: uuid.UUID
@@ -56,6 +71,7 @@ class OnboardingStepRequest(BaseModel):
     step: int = Field(ge=1, le=7)
     candidate_type: Optional[str] = None
     sub_category: Optional[str] = None
+    avatar_gender: Optional[Literal["", "woman", "man", "non_binary", "prefer_not_to_say"]] = None
     industry_id: Optional[uuid.UUID] = None
     current_company: Optional[str] = None
     current_role: Optional[str] = None
@@ -65,6 +81,13 @@ class OnboardingStepRequest(BaseModel):
     employment_status: Optional[str] = None
     key_skills: Optional[List[str]] = None
     career_goals: Optional[str] = None
+    professional_summary: Optional[str] = Field(default=None, max_length=3000)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    location: Optional[str] = Field(default=None, max_length=255)
+    linkedin_url: Optional[str] = Field(default=None, max_length=500)
+    github_url: Optional[str] = Field(default=None, max_length=500)
+    certifications: Optional[List[CertificationCreate]] = None
+    projects: Optional[List[ProjectCreate]] = None
     education: Optional[List[EducationCreate]] = None
     experience: Optional[List[ExperienceCreate]] = None
     interview_rounds_preferred: Optional[List[str]] = None
@@ -88,6 +111,7 @@ class CandidateProfileResponse(BaseModel):
     user_id: uuid.UUID
     candidate_type: Optional[str] = None
     sub_category: Optional[str] = None
+    avatar_gender: Optional[Literal["woman", "man", "non_binary", "prefer_not_to_say"]] = None
     industry_id: Optional[uuid.UUID] = None
     industry: Optional[IndustryResponse] = None
     current_company: Optional[str] = None
@@ -98,6 +122,13 @@ class CandidateProfileResponse(BaseModel):
     employment_status: Optional[str] = None
     key_skills: List[str] = []
     career_goals: Optional[str] = None
+    professional_summary: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    certifications: List[CertificationCreate] = Field(default_factory=list)
+    projects: List[ProjectCreate] = Field(default_factory=list)
     onboarding_completed: bool = False
     onboarding_step: int = 1
     interview_rounds_preferred: List[str] = []

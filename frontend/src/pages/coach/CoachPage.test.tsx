@@ -13,6 +13,9 @@ const { coachApi, modulesApi } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../api/services', () => ({ coachApi, modulesApi }));
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({ profile: { target_role: 'Software Engineer' } }),
+}));
 import { CoachPage } from './CoachPage';
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -37,14 +40,15 @@ describe('CoachPage conversation flow', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><CoachPage /></MemoryRouter>);
     await screen.findByText('Profile-based coaching summary');
-    await user.type(screen.getByRole('textbox', { name: 'Message the AI coach' }), 'hi');
+    await user.type(screen.getByRole('textbox', { name: 'Message the coach' }), 'hi');
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     expect(await screen.findByText('What role')).toBeTruthy();
+    expect(screen.queryByText('Top learning resources')).toBeNull();
     expect(screen.getByText('What role').tagName).toBe('STRONG');
     expect(screen.getByText('First step').closest('ol')).toBeTruthy();
     expect(screen.queryByText(/\*\*What role\*\*/)).toBeNull();
-    expect(screen.getByLabelText('Message the AI coach').className).toContain('w-full');
+    expect(screen.getByLabelText('Message the coach').className).toContain('w-full');
     expect(screen.queryByText('Loading your coaching workspace…')).toBeNull();
     expect(coachApi.getSkillGap).toHaveBeenCalledTimes(1);
     expect(modulesApi.getActiveRoadmap).toHaveBeenCalledTimes(1);

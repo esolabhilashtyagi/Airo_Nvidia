@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
@@ -12,6 +13,7 @@ class DashboardMetricCard(BaseModel):
 
 class ScoreHistoryItem(BaseModel):
     date: str
+    timestamp: Optional[datetime] = None
     score: Optional[float] = None
     type: str # "assessment" or "mock_interview"
 

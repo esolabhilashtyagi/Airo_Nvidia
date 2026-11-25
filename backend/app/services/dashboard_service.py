@@ -2,12 +2,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.assessment import AssessmentAttempt, AssessmentResult, AttemptStatus
+from app.models.assessment import AssessmentAttempt, AssessmentResult
 from app.models.candidate import CandidateProfile
 from app.models.interview import InterviewEvaluation, InterviewStatus, MockInterview
-from app.models.module import CandidateModuleProgress, Module, ModuleProgressStatus
+from app.models.module import CandidateModuleProgress
 from app.models.question import Question, QuestionPracticeLog
 from app.models.resume import Resume, ResumeAnalysis
 from app.models.user import User
@@ -15,6 +14,7 @@ from app.schemas.dashboard import (
     AnalyticsResponse, DashboardMetricCard, DashboardOverviewResponse,
     ScoreHistoryItem, TopicPerformanceItem
 )
+from app.services.candidate_service import CandidateService
 
 
 class DashboardService:
@@ -36,17 +36,10 @@ class DashboardService:
             .order_by(ResumeAnalysis.created_at.desc())
         )
         res_res = await db.execute(res_q)
-        latest_resume_score = res_res.scalars().first() or 0.0
+        latest_resume_score_value = res_res.scalars().first()
+        latest_resume_score = float(latest_resume_score_value) if latest_resume_score_value is not None else 0.0
 
-        # 2. Fetch completed modules count
-        mod_q = select(func.count(CandidateModuleProgress.id)).where(
-            CandidateModuleProgress.candidate_profile_id == candidate_profile.id,
-            CandidateModuleProgress.status == ModuleProgressStatus.COMPLETED
-        )
-        mod_res = await db.execute(mod_q)
-        completed_modules = mod_res.scalar_one()
-
-        # 3. Fetch completed tests count and average score
+        # 2. Fetch completed tests count and average score
         test_q = (
             select(func.count(AssessmentResult.id), func.avg(AssessmentResult.percentage))
             .join(AssessmentAttempt, AssessmentResult.assessment_attempt_id == AssessmentAttempt.id)
@@ -57,47 +50,41 @@ class DashboardService:
         tests_completed = tests_count or 0
         avg_score = round(float(avg_test_score or 0.0), 1)
 
-        # 4. Fetch completed mock interviews count
-        int_q = select(func.count(MockInterview.id)).where(
+        # 3. Fetch completed mock interview count and validated evaluation average.
+        int_q = select(func.count(MockInterview.id), func.avg(InterviewEvaluation.overall_score)).outerjoin(
+            InterviewEvaluation, InterviewEvaluation.mock_interview_id == MockInterview.id
+        ).where(
             MockInterview.candidate_profile_id == candidate_profile.id,
             MockInterview.status == InterviewStatus.COMPLETED
         )
         int_res = await db.execute(int_q)
-        mock_interviews_completed = int_res.scalar_one()
+        mock_interviews_completed, avg_interview_score = int_res.one()
+        mock_interviews_completed = mock_interviews_completed or 0
+        avg_interview_score = round(float(avg_interview_score), 1) if avg_interview_score is not None else None
 
-        # 5. Explainable Interview Readiness Calculation
-        readiness_score = candidate_profile.interview_readiness_score
-        if readiness_score == 0.0:
-            # Baseline calculation
-            score = 30.0 if candidate_profile.onboarding_completed else 10.0
-            if latest_resume_score > 0:
-                score += latest_resume_score * 0.25
-            if tests_completed > 0:
-                score += min(tests_completed * 8.0, 20.0)
-            if mock_interviews_completed > 0:
-                score += min(mock_interviews_completed * 10.0, 25.0)
-            readiness_score = round(min(score, 100.0), 1)
-
-        readiness_factors = {
-            "onboarding_weight": "15% (Profile Completeness)",
-            "resume_alignment_weight": "25% (Resume Evaluation)",
-            "assessment_proficiency_weight": "30% (Validated Knowledge)",
-            "interview_simulation_weight": "30% (Mock Interview Articulation)"
-        }
+        # 4. Recompute the transparent estimate from current evidence. Missing
+        # evidence is excluded from the denominator rather than treated as 0.
+        profile_score = round(min(CandidateService.calculate_readiness_score(candidate_profile) / 75 * 100, 100), 1)
+        readiness_score, readiness_factors = DashboardService._readiness_estimate(
+            profile_score=profile_score,
+            resume_score=latest_resume_score if latest_resume_score_value is not None else None,
+            assessment_score=avg_score if tests_completed > 0 else None,
+            interview_score=avg_interview_score if mock_interviews_completed > 0 else None,
+        )
 
         # Cards
         metrics = [
             DashboardMetricCard(
                 title="Interview Readiness",
                 value=f"{readiness_score}%",
-                change_text="Explainable multi-factor score",
+                change_text=f"{readiness_factors['coverage_percent']}% evidence coverage",
                 change_type="positive" if readiness_score >= 70 else "neutral",
                 icon="Award"
             ),
             DashboardMetricCard(
                 title="Resume Score",
-                value=f"{round(latest_resume_score, 1)}/100" if latest_resume_score > 0 else "Pending",
-                change_text="AI Rubric Analysis" if latest_resume_score > 0 else "Upload resume to score",
+                value=f"{round(latest_resume_score, 1)}/100" if latest_resume_score_value is not None else "Pending",
+                change_text="Completed resume analysis" if latest_resume_score_value is not None else "Upload resume to score",
                 change_type="positive" if latest_resume_score >= 75 else "neutral",
                 icon="FileText"
             ),
@@ -118,7 +105,7 @@ class DashboardService:
         ]
 
         recent_activity = []
-        if latest_resume_score > 0:
+        if latest_resume_score_value is not None:
             recent_activity.append({
                 "action": "Resume Analyzed",
                 "detail": f"Overall Score: {latest_resume_score}%",
@@ -181,7 +168,7 @@ class DashboardService:
                     activity_by_date[key]["questions"] += 1
 
         # 2. Score History
-        score_history: List[ScoreHistoryItem] = []
+        score_events: list[tuple[datetime | None, ScoreHistoryItem]] = []
 
         # Assessment results
         res_q = (
@@ -194,22 +181,45 @@ class DashboardService:
         for pct, dt in res_results.all():
             if pct is None:
                 continue
-            date_str = dt.strftime("%b %d") if dt else "Recent"
-            score_history.append(ScoreHistoryItem(date=date_str, score=pct, type="assessment"))
+            timestamp = dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
+            score_events.append((dt, ScoreHistoryItem(
+                date=dt.strftime("%b %d %H:%M") if dt else "Time unknown",
+                timestamp=timestamp,
+                score=pct,
+                type="assessment",
+            )))
 
         # Interview evaluations
         eval_q = (
             select(InterviewEvaluation.overall_score, MockInterview.completed_at)
             .join(MockInterview, InterviewEvaluation.mock_interview_id == MockInterview.id)
-            .where(MockInterview.candidate_profile_id == candidate_profile_id)
+            .where(
+                MockInterview.candidate_profile_id == candidate_profile_id,
+                MockInterview.status == InterviewStatus.COMPLETED,
+            )
             .order_by(MockInterview.completed_at.asc())
         )
         eval_results = await db.execute(eval_q)
         for osc, dt in eval_results.all():
             if osc is None:
                 continue
-            date_str = dt.strftime("%b %d") if dt else "Recent"
-            score_history.append(ScoreHistoryItem(date=date_str, score=osc, type="mock_interview"))
+            timestamp = dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
+            score_events.append((dt, ScoreHistoryItem(
+                date=dt.strftime("%b %d %H:%M") if dt else "Time unknown",
+                timestamp=timestamp,
+                score=osc,
+                type="mock_interview",
+            )))
+
+        # Merge the separate source queries into one chronological timeline.
+        score_events.sort(key=lambda event: (
+            event[0] is None,
+            (event[0].replace(tzinfo=timezone.utc) if event[0] and event[0].tzinfo is None else event[0].astimezone(timezone.utc))
+            if event[0] else datetime.max.replace(tzinfo=timezone.utc),
+        ))
+        score_history = []
+        for _, event in score_events:
+            score_history.append(event)
 
         topic_rows = await db.execute(select(
             Question.topic, func.avg(QuestionPracticeLog.score_percentage), func.count(QuestionPracticeLog.id)
@@ -233,3 +243,34 @@ class DashboardService:
             module_completion_percentage=round(float(avg_mod), 1),
             total_practice_count=total_practice
         )
+
+    @staticmethod
+    def _readiness_estimate(
+        *,
+        profile_score: float,
+        resume_score: float | None,
+        assessment_score: float | None,
+        interview_score: float | None,
+    ) -> tuple[float, dict[str, Any]]:
+        def bounded(value: float | None) -> float | None:
+            return round(min(max(float(value), 0.0), 100.0), 1) if value is not None else None
+
+        components = {
+            "profile_baseline": ("Profile completeness", 15, bounded(profile_score), "Industry, target role, skills, education, preferences, and target companies."),
+            "resume_alignment": ("Resume structure and analysis", 25, bounded(resume_score), "Latest completed resume analysis."),
+            "assessment_proficiency": ("Assessment performance", 30, bounded(assessment_score), "Average score across completed assessments."),
+            "interview_delivery": ("Mock interview performance", 30, bounded(interview_score), "Average score across completed mock interview evaluations."),
+        }
+        available_weight = sum(weight for _, weight, score, _ in components.values() if score is not None)
+        weighted_score = sum(weight * score for _, weight, score, _ in components.values() if score is not None)
+        estimate = round(weighted_score / available_weight, 1) if available_weight else 0.0
+        factors: dict[str, Any] = {"coverage_percent": available_weight, "components": {}}
+        for key, (label, weight, score, description) in components.items():
+            factors["components"][key] = {
+                "label": label,
+                "weight_percent": weight,
+                "score_percent": score,
+                "included": score is not None,
+                "description": description,
+            }
+        return estimate, factors

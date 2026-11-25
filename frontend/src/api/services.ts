@@ -11,6 +11,15 @@ export const systemApi = {
   markNotificationRead: async (id: string) => apiClient<{ id: string; is_read: boolean }>(`/system/notifications/${id}/read`, { method: 'PATCH' }),
 };
 
+export const paymentsApi = {
+  atsAccess: async () => apiClient<{ has_access: boolean; price_paise: number; currency: string; checkout_configured: boolean }>('/payments/ats-access'),
+  createAtsOrder: async () => apiClient<{ order_id: string; key_id: string; amount_paise: number; currency: string }>('/payments/ats-access/order', { method: 'POST' }),
+  verifyAtsPayment: async (payload: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => apiClient<{ has_access: boolean; status: string }>('/payments/ats-access/verify', { method: 'POST', body: JSON.stringify(payload) }),
+  resumeTemplateAccess: async () => apiClient<{ has_access: boolean; price_paise: number; currency: string; checkout_configured: boolean }>('/payments/resume-templates'),
+  createResumeTemplateOrder: async () => apiClient<{ order_id: string; key_id: string; amount_paise: number; currency: string }>('/payments/resume-templates/order', { method: 'POST' }),
+  verifyResumeTemplatePayment: async (payload: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => apiClient<{ has_access: boolean; status: string }>('/payments/resume-templates/verify', { method: 'POST', body: JSON.stringify(payload) }),
+};
+
 export const questionsApi = {
   listQuestions: async (params: Record<string, any> = {}) => {
     const query = new URLSearchParams();
@@ -247,9 +256,29 @@ export const coachApi = {
     title: string;
     messages: Array<{ id: string; sender: 'user' | 'assistant' | 'system'; message_text: string; created_at: string }>;
   }>(`/coach/conversations/${id}`),
+  searchResources: async (topic: string, targetRole: string, recentYears?: number) => {
+    const query = new URLSearchParams({ topic, target_role: targetRole });
+    if (recentYears) query.set('recent_years', String(recentYears));
+    return apiClient<{
+      topic: string; target_role: string;
+      articles: Array<{ title: string; url: string; publication_year?: number | null; citation_count: number; source: string }>;
+      article_status: string;
+      videos: Array<{ title: string; url: string; channel: string; published_at?: string | null; view_count: number; source: string }>;
+      video_status: string; ranking_notes: { articles: string; videos: string };
+    }>(`/coach/resources?${query.toString()}`);
+  },
 };
 
 export const testingApi = {
+  suggestTopics: async (subject: string) => {
+    const query = new URLSearchParams({ subject });
+    return apiClient<{ suggestions: Array<{ subject: string; topic: string; rationale: string; source: string; understanding_percentage?: number | null; evidence_status: string; suggested_difficulty: string }>; ai_status: string; target_role?: string | null }>(`/testing/suggestions?${query.toString()}`);
+  },
+  generateQuiz: async (topic: string, numQuestions: number) => apiClient<{
+    topic: string; assessment_id: string; attempt_id: string; started_at: string; ends_at: string;
+    duration_minutes?: number; total_questions?: number; questions: Array<{ id: string; question_text: string; source_provenance: string }>; saved_answers?: Array<{ question_id: string; selected_options: string[]; text_response?: string | null; is_marked_for_review: boolean }>;
+    generated_count: number; based_on_approved: number; suggested_difficulty: string;
+  }>('/testing/quiz', { method: 'POST', body: JSON.stringify({ topic, num_questions: numQuestions }) }),
   configure: async (config: any) => {
     return apiClient<any>('/testing/configure', {
       method: 'POST',

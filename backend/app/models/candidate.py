@@ -20,6 +20,8 @@ class CandidateProfile(Base, UUIDMixin, TimestampMixin):
     # working_professional or student_fresher
     candidate_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     sub_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Optional, self-selected avatar appearance. Never inferred from names.
+    avatar_gender: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     industry_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("industries.id", ondelete="SET NULL"),
@@ -34,6 +36,13 @@ class CandidateProfile(Base, UUIDMixin, TimestampMixin):
     employment_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     key_skills: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     career_goals: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    professional_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    linkedin_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    github_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    certifications: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    projects: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     
     # Onboarding progression
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

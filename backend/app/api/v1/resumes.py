@@ -26,6 +26,8 @@ from app.schemas.resume import (
 )
 from app.services.resume_service import ResumeService
 from app.services.resume_builder import build_profile_resume_docx, build_profile_resume_pdf, safe_resume_filename
+from app.services.ats_access import ATSAccessService
+from app.services.resume_template_access import ResumeTemplateAccessService
 
 router = APIRouter(prefix="/resumes", tags=["Resume Intelligence"])
 
@@ -65,7 +67,7 @@ async def list_resumes(
 
 @router.post("/generate-from-profile", response_class=StreamingResponse)
 async def generate_resume_from_profile(
-    template: str = Query(default="modern", pattern="^(modern|classic|compact)$"),
+    template: str = Query(default="standard", pattern="^(standard|modern|classic|compact)$"),
     file_format: str = Query(default="pdf", alias="format", pattern="^(pdf|docx)$"),
     candidate_profile: CandidateProfile = Depends(get_current_candidate_profile),
     db: AsyncSession = Depends(get_async_db),
@@ -83,6 +85,10 @@ async def generate_resume_from_profile(
     profile = result.scalar_one_or_none()
     if not profile or not profile.user:
         raise HTTPException(status_code=404, detail="Candidate profile was not found.")
+    if template != "standard" and not await ResumeTemplateAccessService.has_access(db, profile.user_id):
+        raise HTTPException(status_code=402, detail="Unlock premium resume layouts to use this style.")
+    if template == "standard" and file_format != "pdf":
+        raise HTTPException(status_code=402, detail="Editable exports are included with premium resume layouts.")
     try:
         builder = build_profile_resume_pdf if file_format == "pdf" else build_profile_resume_docx
         content = await run_in_threadpool(builder, profile.user, profile, template)
@@ -156,6 +162,7 @@ async def create_ats_review(
     candidate_profile: CandidateProfile = Depends(get_current_candidate_profile),
     db: AsyncSession = Depends(get_async_db),
 ):
+    await ATSAccessService.require_access(db, candidate_profile.user_id)
     review = await ResumeService.create_ats_review(db, resume_id, candidate_profile.id, request)
     return APIResponse(data=review, message="Job-specific resume match estimate saved")
 
@@ -166,6 +173,7 @@ async def get_ats_review(
     candidate_profile: CandidateProfile = Depends(get_current_candidate_profile),
     db: AsyncSession = Depends(get_async_db),
 ):
+    await ATSAccessService.require_access(db, candidate_profile.user_id)
     review = await ResumeService.get_latest_ats_review(db, resume_id, candidate_profile.id)
     return APIResponse(data=review, message="Latest job-specific resume match estimate retrieved")
 

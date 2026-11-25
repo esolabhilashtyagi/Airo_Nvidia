@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { authApi } from '../../api/auth';
+import { paymentsApi } from '../../api/services';
 import { useAuth } from '../../context/AuthContext';
 import { RequiredLabel } from '../../components/common/RequiredMark';
 
@@ -11,6 +12,14 @@ export function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [atsAccess, setAtsAccess] = useState<{ has_access: boolean } | null>(null);
+  const [resumeAccess, setResumeAccess] = useState<{ has_access: boolean } | null>(null);
+  useEffect(() => {
+    void Promise.all([paymentsApi.atsAccess(), paymentsApi.resumeTemplateAccess()]).then(([ats, resume]) => {
+      setAtsAccess(ats);
+      setResumeAccess(resume);
+    }).catch(() => { setAtsAccess(null); setResumeAccess(null); });
+  }, []);
 
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -48,6 +57,20 @@ export function SettingsPage() {
           <div><dt className="text-xs font-medium text-slate-500">Name</dt><dd className="mt-1 text-sm text-slate-900">{user?.full_name}</dd></div>
           <div><dt className="text-xs font-medium text-slate-500">Email</dt><dd className="mt-1 text-sm text-slate-900">{user?.email}</dd></div>
         </dl>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-slate-900">Profile & preferences</h2><p className="mt-1 text-sm text-slate-600">Keep your resume details and interview preferences current.</p></div><Link to="/profile" className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Edit profile</Link></div>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Feature access</h2>
+        <p className="mt-1 text-sm text-slate-600">Review paid features linked to your account.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-900">Job-specific resume review</p><p className="mt-1 text-sm text-slate-600">{atsAccess?.has_access ? 'One-time access is active.' : atsAccess ? 'Not unlocked.' : 'Access status is unavailable.'}</p></div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-900">Premium resume layouts</p><p className="mt-1 text-sm text-slate-600">{resumeAccess?.has_access ? 'One-time access is active.' : resumeAccess ? 'Not unlocked.' : 'Access status is unavailable.'}</p></div>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">Purchases stay linked to this account. <Link to="/profile" className="font-semibold text-violet-800 underline">Open Resume Studio</Link> to download your PDF or view available layouts.</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

@@ -14,6 +14,7 @@ from app.api.v1.system import router as system_router
 from app.api.v1.companies import router as companies_router
 from app.api.v1.question_taxonomy import router as question_taxonomy_router
 from app.api.v1.company_questions import router as company_questions_router
+from app.api.v1.payments import router as payments_router
 
 api_v1_router = APIRouter()
 
@@ -32,3 +33,4 @@ api_v1_router.include_router(admin_router)
 api_v1_router.include_router(system_router)
 api_v1_router.include_router(companies_router)
 api_v1_router.include_router(question_taxonomy_router)
+api_v1_router.include_router(payments_router)

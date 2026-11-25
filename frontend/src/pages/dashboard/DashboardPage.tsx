@@ -43,6 +43,8 @@ export const DashboardPage: React.FC = () => {
   const [analytics, setAnalytics] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const targetRole = profile?.target_role || overview?.target_role;
+  const targetIndustry = profile?.industry?.name || overview?.industry_name || 'your selected industry';
 
   useEffect(() => {
     if (profileIncomplete) return;
@@ -96,21 +98,16 @@ export const DashboardPage: React.FC = () => {
         <div className="relative z-10 max-w-2xl">
           <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-white/80 px-3 py-1 text-xs font-semibold text-violet-800">
             <Sparkles className="w-3.5 h-3.5" />
-            AI Career Intelligence Dashboard
+            Career Preparation Overview
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
             Welcome back, {user?.full_name?.split(' ')[0] || 'Candidate'}!
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Targeting{' '}
-              <span className="font-semibold text-violet-800">
-              {profile?.target_role || overview?.target_role || 'a target role you choose'}
-            </span>{' '}
-            in{' '}
-              <span className="font-semibold text-slate-900">
-              {profile?.industry?.name || overview?.industry_name || 'your selected industry'}
-            </span>
-            . Your comprehensive preparation metrics are synchronized below.
+            {targetRole
+              ? <>Targeting <span className="font-semibold text-violet-800">{targetRole}</span> in <span className="font-semibold text-slate-900">{targetIndustry}</span>.</>
+              : <>Choose a target role to personalize your preparation in <span className="font-semibold text-slate-900">{targetIndustry}</span>.</>}
+            {' '}Your preparation metrics are summarized below.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
@@ -118,7 +115,7 @@ export const DashboardPage: React.FC = () => {
               to="/coach"
               className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-violet-900/10 transition-colors hover:bg-violet-800"
             >
-              <Bot className="w-4 h-4" /> Consult AI Coach
+              <Bot className="w-4 h-4" /> Consult Career Coach
             </Link>
             <Link
               to="/testing"
@@ -148,40 +145,26 @@ export const DashboardPage: React.FC = () => {
         weeklyActivity={analytics?.weekly_activity ?? []}
         scoreHistory={analytics?.score_history ?? []}
         totalPracticeCount={analytics?.total_practice_count ?? 0}
-        readinessScore={overview?.interview_readiness_score ?? null}
       />
 
       {/* Explainable Readiness Methodology Section */}
       <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <Award className="w-5 h-5 text-violet-600" />
-          <h3 className="text-sm font-bold text-slate-900">How is your Interview Readiness calculated?</h3>
+          <h3 className="text-sm font-bold text-slate-900">How your readiness estimate is calculated</h3>
         </div>
         <p className="text-xs text-slate-500 mb-4">
-          Aairo utilizes a transparent multi-dimensional evaluation rubric rather than subjective scores:
+          Weighted average of available evidence. Missing assessments are excluded, not counted as zero. Current evidence coverage: {overview?.readiness_factors?.coverage_percent ?? 0}%.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase">Profile Baseline</span>
-            <p className="text-xs font-bold text-slate-900 mt-1">15% Weight</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Industry, education, and target company definition.</p>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase">Resume Alignment</span>
-            <p className="text-xs font-bold text-slate-900 mt-1">25% Weight</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Rubric assessment of impact, action verbs & keywords.</p>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase">Assessment Proficiency</span>
-            <p className="text-xs font-bold text-slate-900 mt-1">30% Weight</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Deterministic MCQs and validated technical test scores.</p>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase">Mock Interview Delivery</span>
-            <p className="text-xs font-bold text-slate-900 mt-1">30% Weight</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">STAR behavioral and technical articulation rubrics.</p>
-          </div>
+          {Object.entries(overview?.readiness_factors?.components ?? {}).map(([key, component]) => (
+            <div key={key} className="p-3 bg-slate-50 rounded-lg border border-slate-200/60">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase">{component.label}</span>
+              <p className="text-xs font-bold text-slate-900 mt-1">{component.weight_percent}% weight · {component.included ? `${component.score_percent}%` : 'Not assessed'}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{component.description}</p>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -218,7 +201,7 @@ export const DashboardPage: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-violet-50 text-violet-700 flex items-center justify-center mb-3">
               <Video className="w-5 h-5" />
             </div>
-            <h4 className="font-semibold text-slate-900 text-sm">AI Mock Interview</h4>
+            <h4 className="font-semibold text-slate-900 text-sm">Mock Interview</h4>
             <p className="text-xs text-slate-500 mt-1">Practice role-focused technical and behavioral interview questions.</p>
           </div>
           <Link to="/interviews" className="mt-4 text-xs font-bold text-violet-700 hover:text-violet-800 flex items-center gap-1">
