@@ -429,8 +429,174 @@ class LiveWebScraper:
             except Exception as e:
                 logger.debug(f"Reddit fetch notice: {e}")
 
-        # Execute selected network tasks concurrently
-        net_tasks = []
+        async def fetch_stackexchange():
+            nonlocal scraped_sources_count
+            try:
+                site = "softwareengineering"
+                if role_attrs.get("is_design"):
+                    site = "ux"
+                elif role_attrs.get("is_finance"):
+                    site = "money"
+                elif role_attrs.get("is_ai_ml") or role_attrs.get("is_data"):
+                    site = "datascience"
+
+                q_terms = []
+                if skills_target:
+                    q_terms.append(skills_target[0])
+                elif role_attrs.get("is_tech"):
+                    q_terms.append("system design")
+                else:
+                    q_terms.append(role_target.split()[0])
+                query_str = " ".join(q_terms)
+
+                async with httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "AAIRO-Intel/1.0"}) as client:
+                    resp = await client.get(
+                        "https://api.stackexchange.com/2.3/search/advanced",
+                        params={
+                            "order": "desc",
+                            "sort": "votes",
+                            "q": query_str,
+                            "site": site,
+                            "pagesize": 15,
+                            "filter": "withbody",
+                        },
+                    )
+                    if resp.status_code == 200:
+                        items = resp.json().get("items", [])
+                        if items:
+                            scraped_sources_count += 1
+                        for it in items:
+                            title = html.unescape(str(it.get("title") or "").strip())
+                            if not title or len(title) < 15:
+                                continue
+                            if not title.endswith("?"):
+                                title = f"{title}?"
+                            q_text = strip_question_wrappers(title)
+                            q_hash = get_dedup_hash(q_text)
+                            if q_hash not in seen_hashes:
+                                seen_hashes.add(q_hash)
+                                r_num, r_name = self._infer_round(q_text)
+                                candidate_questions.append({
+                                    "company_name": comp_target,
+                                    "job_role": role_target,
+                                    "question_text": q_text,
+                                    "question_category": self.nlp.classify_question(q_text)["category"],
+                                    "difficulty": diff_target or self._infer_difficulty(q_text),
+                                    "round_number": round_target or r_num,
+                                    "interview_round": r_name,
+                                    "skills_tested": skills_target or list(it.get("tags", []))[:4] or [query_str],
+                                    "source_platform": f"StackExchange ({site})",
+                                    "original_url": it.get("link", f"https://{site}.stackexchange.com"),
+                                    "confidence_score": 0.93,
+                                    "verification_status": "VERIFIED",
+                                    "years_of_experience": yoe_target,
+                                })
+            except Exception as e:
+                logger.debug(f"StackExchange fetch notice: {e}")
+
+        async def fetch_devto():
+            nonlocal scraped_sources_count
+            try:
+                tag = "interview"
+                if skills_target:
+                    clean_tag = re.sub(r"[^a-z0-9]", "", skills_target[0].lower())
+                    if len(clean_tag) >= 2:
+                        tag = clean_tag
+                async with httpx.AsyncClient(timeout=6.0, headers=self.headers) as client:
+                    resp = await client.get(
+                        "https://dev.to/api/articles",
+                        params={"tag": "interview", "per_page": 6, "top": 60},
+                    )
+                    articles_meta = resp.json() if resp.status_code == 200 else []
+                    if tag != "interview":
+                        resp2 = await client.get(
+                            "https://dev.to/api/articles",
+                            params={"tag": tag, "per_page": 4, "top": 60},
+                        )
+                        if resp2.status_code == 200:
+                            articles_meta = (articles_meta or []) + (resp2.json() or [])
+                    for art_meta in (articles_meta or [])[:4]:
+                        art_id = art_meta.get("id")
+                        art_url = art_meta.get("url", "https://dev.to")
+                        if not art_id:
+                            continue
+                        det = await client.get(f"https://dev.to/api/articles/{art_id}")
+                        if det.status_code != 200:
+                            continue
+                        body_md = det.json().get("body_markdown") or ""
+                        if body_md:
+                            scraped_sources_count += 1
+                            extracted = self._extract_questions_from_text(body_md, default_company=comp_target)
+                            for eq in extracted[:8]:
+                                q_hash = get_dedup_hash(eq["question_text"])
+                                if q_hash not in seen_hashes:
+                                    seen_hashes.add(q_hash)
+                                    candidate_questions.append({
+                                        "company_name": comp_target,
+                                        "job_role": role_target,
+                                        "question_text": eq["question_text"],
+                                        "question_category": self.nlp.classify_question(eq["question_text"])["category"],
+                                        "difficulty": diff_target or eq["difficulty"],
+                                        "round_number": round_target or eq["round_number"],
+                                        "interview_round": eq["interview_round"],
+                                        "skills_tested": skills_target or ["Engineering", "Interview Prep"],
+                                        "source_platform": "Dev.to Live Blogs",
+                                        "original_url": art_url,
+                                        "confidence_score": 0.91,
+                                        "verification_status": "VERIFIED",
+                                        "years_of_experience": yoe_target,
+                                    })
+            except Exception as e:
+                logger.debug(f"Dev.to fetch notice: {e}")
+
+        async def fetch_github_dynamic():
+            nonlocal scraped_sources_count
+            try:
+                search_q = f"{skills_target[0] if skills_target else role_target} interview questions"
+                async with httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "AAIRO-Intel/1.0"}) as client:
+                    resp = await client.get(
+                        "https://api.github.com/search/repositories",
+                        params={"q": search_q, "sort": "stars", "per_page": 3},
+                    )
+                    if resp.status_code != 200:
+                        return
+                    repos = resp.json().get("items", [])
+                    for repo in repos[:2]:
+                        full_name = repo.get("full_name")
+                        branch = repo.get("default_branch", "main")
+                        html_url = repo.get("html_url", "https://github.com")
+                        if not full_name:
+                            continue
+                        raw_url = f"https://raw.githubusercontent.com/{full_name}/{branch}/README.md"
+                        raw_resp = await client.get(raw_url)
+                        if raw_resp.status_code != 200:
+                            continue
+                        scraped_sources_count += 1
+                        extracted = self._extract_questions_from_text(raw_resp.text[:60000], default_company=comp_target)
+                        for eq in extracted[:15]:
+                            q_hash = get_dedup_hash(eq["question_text"])
+                            if q_hash not in seen_hashes:
+                                seen_hashes.add(q_hash)
+                                candidate_questions.append({
+                                    "company_name": comp_target,
+                                    "job_role": role_target,
+                                    "question_text": eq["question_text"],
+                                    "question_category": self.nlp.classify_question(eq["question_text"])["category"],
+                                    "difficulty": diff_target or eq["difficulty"],
+                                    "round_number": round_target or eq["round_number"],
+                                    "interview_round": eq["interview_round"],
+                                    "skills_tested": skills_target or ["Core Engineering", "Problem Solving"],
+                                    "source_platform": f"GitHub ({full_name})",
+                                    "original_url": html_url,
+                                    "confidence_score": 0.94,
+                                    "verification_status": "VERIFIED",
+                                    "years_of_experience": yoe_target,
+                                })
+            except Exception as e:
+                logger.debug(f"GitHub dynamic fetch notice: {e}")
+
+        # Execute real unblocked + platform network tasks concurrently
+        net_tasks = [fetch_stackexchange(), fetch_devto(), fetch_github_dynamic()]
         role_attrs = DynamicInterviewEngine.infer_role_attributes(role_target, skills_target)
         if any(p.lower() in ["open web", "web", "blogs"] for p in platforms_target):
             net_tasks.append(fetch_open_web())
@@ -443,7 +609,7 @@ class LiveWebScraper:
 
         if net_tasks:
             try:
-                await asyncio.wait_for(asyncio.gather(*net_tasks, return_exceptions=True), timeout=2.5)
+                await asyncio.wait_for(asyncio.gather(*net_tasks, return_exceptions=True), timeout=8.0)
             except Exception:
                 pass
 

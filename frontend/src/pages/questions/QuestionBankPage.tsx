@@ -147,7 +147,7 @@ export function QuestionBankPage() {
 
   const [scrapeRound, setScrapeRound] = useState<string>('');
   const [scrapeDifficulty, setScrapeDifficulty] = useState<string>('');
-  const [scrapeLimit, setScrapeLimit] = useState<number>(30);
+  const [scrapeLimit, setScrapeLimit] = useState<number>(50);
   const [scrapePlatforms, setScrapePlatforms] = useState<string[]>([
     'LeetCode',
     'GeeksforGeeks',
@@ -317,7 +317,7 @@ export function QuestionBankPage() {
         difficulty: companyDifficulty || undefined,
         search: companySearch || undefined,
         page: companyPage,
-        limit: 25,
+        limit: 100,
       };
       const response = await companyIntelApi.listQuestions(params);
       setCompanyQuestions(response ?? []);
@@ -527,11 +527,10 @@ export function QuestionBankPage() {
         <button
           type="button"
           onClick={() => setActiveTab('company')}
-          className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${
-            activeTab === 'company'
+          className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${activeTab === 'company'
               ? 'border-violet-700 text-violet-800'
               : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+            }`}
         >
           🏢 Authentic Company Interview Intel (FAANG & Tech)
           <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700">335+ Verified</span>
@@ -539,11 +538,10 @@ export function QuestionBankPage() {
         <button
           type="button"
           onClick={() => setActiveTab('standard')}
-          className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${
-            activeTab === 'standard'
+          className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${activeTab === 'standard'
               ? 'border-violet-700 text-violet-800'
               : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+            }`}
         >
           🎓 Standard Curriculum Practice Bank
         </button>
@@ -564,10 +562,10 @@ export function QuestionBankPage() {
                   {item.evaluation_status === 'unavailable'
                     ? 'Evaluation unavailable'
                     : item.evaluation_provenance === 'ai'
-                    ? `AI evaluation · ${item.score_percentage ?? '—'}%`
-                    : item.score_percentage === null
-                    ? 'Saved without score'
-                    : `Deterministic result · ${item.score_percentage}%`}
+                      ? `AI evaluation · ${item.score_percentage ?? '—'}%`
+                      : item.score_percentage === null
+                        ? 'Saved without score'
+                        : `Deterministic result · ${item.score_percentage}%`}
                 </p>
               </article>
             ))
@@ -617,16 +615,14 @@ export function QuestionBankPage() {
                     setSelectedCompany(c.name);
                     setCompanyPage(1);
                   }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                    selectedCompany.toLowerCase() === c.name.toLowerCase()
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedCompany.toLowerCase() === c.name.toLowerCase()
                       ? 'bg-violet-700 text-white shadow-sm ring-1 ring-violet-700'
                       : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   <span>{c.name}</span>
-                  <span className={`text-[10px] rounded-full px-1.5 py-0.2 ${
-                    selectedCompany.toLowerCase() === c.name.toLowerCase() ? 'bg-violet-800 text-violet-100' : 'bg-slate-200 text-slate-600'
-                  }`}>
+                  <span className={`text-[10px] rounded-full px-1.5 py-0.2 ${selectedCompany.toLowerCase() === c.name.toLowerCase() ? 'bg-violet-800 text-violet-100' : 'bg-slate-200 text-slate-600'
+                    }`}>
                     {c.question_count}
                   </span>
                 </button>
@@ -671,11 +667,10 @@ export function QuestionBankPage() {
                   setSelectedRound(r.id);
                   setCompanyPage(1);
                 }}
-                className={`rounded-full px-3.5 py-1 text-xs font-medium transition ${
-                  selectedRound === r.id
+                className={`rounded-full px-3.5 py-1 text-xs font-medium transition ${selectedRound === r.id
                     ? 'bg-violet-100 font-semibold text-violet-800 ring-2 ring-violet-600'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                  }`}
               >
                 {r.label}
               </button>
@@ -791,11 +786,10 @@ export function QuestionBankPage() {
                       key={tier.label}
                       type="button"
                       onClick={() => setTargetYoE(tier.val)}
-                      className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${
-                        targetYoE === tier.val
+                      className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${targetYoE === tier.val
                           ? 'bg-violet-700 text-white font-semibold shadow-xs'
                           : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       {tier.label}
                     </button>
@@ -870,6 +864,8 @@ export function QuestionBankPage() {
                     <option value={15}>15 questions (Quick)</option>
                     <option value={30}>30 questions (Standard)</option>
                     <option value={50}>50 questions (Deep)</option>
+                    <option value={100}>100 questions (Max)</option>
+                    <option value={150}>150 questions (Exhaustive)</option>
                   </select>
                 </label>
 
@@ -882,11 +878,10 @@ export function QuestionBankPage() {
                         key={plat}
                         type="button"
                         onClick={() => togglePlatform(plat)}
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
-                          isSelected
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${isSelected
                             ? 'bg-violet-600 text-white shadow-xs'
                             : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         {plat}
                       </button>
@@ -962,8 +957,8 @@ export function QuestionBankPage() {
                     const dorkStr = Array.isArray(dorkVal)
                       ? dorkVal[0]
                       : typeof dorkVal === 'object' && dorkVal !== null
-                      ? (dorkVal as any).dork_query || ''
-                      : String(dorkVal);
+                        ? (dorkVal as any).dork_query || ''
+                        : String(dorkVal);
                     return (
                       <div key={rKey} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                         <div className="flex items-center justify-between">
@@ -1081,13 +1076,12 @@ export function QuestionBankPage() {
                           {q.interview_round}
                         </span>
                         <span
-                          className={`ml-2 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${
-                            q.difficulty.toLowerCase() === 'hard'
+                          className={`ml-2 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${q.difficulty.toLowerCase() === 'hard'
                               ? 'bg-rose-50 text-rose-700'
                               : q.difficulty.toLowerCase() === 'medium'
-                              ? 'bg-amber-50 text-amber-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-emerald-50 text-emerald-700'
+                            }`}
                         >
                           {q.difficulty}
                         </span>
@@ -1184,9 +1178,8 @@ export function QuestionBankPage() {
                     <div role="status" className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
                       <div className="flex items-center justify-between">
                         <span
-                          className={`rounded-md px-2.5 py-1 text-xs font-bold ${
-                            companyResult.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                          }`}
+                          className={`rounded-md px-2.5 py-1 text-xs font-bold ${companyResult.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}
                         >
                           {companyResult.is_correct ? 'Meets Standards' : 'Needs Optimization'} · {companyResult.score_percentage}%
                         </span>
@@ -1425,8 +1418,8 @@ export function QuestionBankPage() {
                         {result.evaluation_status === 'unavailable'
                           ? 'Answer saved; evaluation unavailable'
                           : result.evaluation_provenance === 'ai'
-                          ? `AI evaluation · ${result.score_percentage}%`
-                          : `${result.is_correct ? 'Correct' : 'Not quite'} · ${result.score_percentage}%`}
+                            ? `AI evaluation · ${result.score_percentage}%`
+                            : `${result.is_correct ? 'Correct' : 'Not quite'} · ${result.score_percentage}%`}
                       </p>
                       <p className="mt-2 text-slate-700">{result.feedback}</p>
                       <p className="mt-3 font-medium text-slate-800">Expected answer</p>

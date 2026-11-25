@@ -104,7 +104,7 @@ async def list_company_questions(
     round_number: Optional[int] = Query(None, ge=1, le=5, description="Filter by canonical round (1 to 5)"),
     search: Optional[str] = Query(None, max_length=200, description="Keyword search in question text or company"),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=200),
     _candidate: Optional[CandidateProfile] = Depends(get_optional_candidate_profile),
 ):
     """Retrieve authentic, verified company interview questions with multi-faceted filtering."""
