@@ -171,9 +171,73 @@ class LiveWebScraper:
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
 
-    def _infer_round(self, text: str) -> tuple[int, str]:
-        """Infers interview round number (1 to 5) and title from question content."""
+    def _is_non_interview_noise(self, text: str) -> bool:
+        """Reject personal finance, lifestyle, banking, and non-interview community chatter."""
+        t_low = (text or "").lower()
+        noise_terms = [
+            "mortgage", "down payment", "retirement fund", "riester", "80-year-old", "dad invest",
+            "gambling", "wire transfer", "intermediary bank", "pronounce", "procounce",
+            "additional income", "full-time job", "new car vs used", "compare value",
+            "index funds vs", "improve a person's finance knowledge", "help my non-retired",
+        ]
+        return any(term in t_low for term in noise_terms)
+
+    def _extract_question_skills(
+        self, q_text: str, role_attrs: Dict[str, Any], fallback_skills: List[str]
+    ) -> List[str]:
+        """Extract specific 2-4 skills actually tested by this individual question."""
+        t_low = (q_text or "").lower()
+        if role_attrs.get("role_family") == "FINANCE":
+            if any(k in t_low for k in ["dcf", "wacc", "terminal value", "discounted cash"]):
+                return ["DCF", "WACC", "Terminal Value"]
+            if any(k in t_low for k in ["three-statement", "3-statement", "depreciation", "balance sheet", "cash flow statement"]):
+                return ["3-Statement Modeling", "GAAP / IFRS", "Accounting"]
+            if any(k in t_low for k in ["budget", "forecast", "variance", "operating profit"]):
+                return ["Budgeting", "Forecasting", "Variance Analysis"]
+            if any(k in t_low for k in ["excel", "pivottable", "xlookup", "vlookup", "vba"]):
+                return ["Excel", "Financial Modeling", "Data Analysis"]
+            if any(k in t_low for k in ["cecl", "credit loss", "provision"]):
+                return ["Accounting", "Credit Loss Provisioning", "GAAP / IFRS"]
+            if any(k in t_low for k in ["stakeholder", "disagreement", "business leader", "decision", "executive"]):
+                return ["Stakeholder Management", "Business Partnership", "Communication"]
+            if any(k in t_low for k in ["new product", "launch", "strategy", "pricing", "bottleneck", "sensitivity"]):
+                return ["Business Strategy", "Scenario & Sensitivity Analysis", "FP&A"]
+            if any(k in t_low for k in ["valuation", "value a business", "valuing", "credit rating", "stock option"]):
+                return ["Valuation", "Corporate Finance", "Capital Markets"]
+            return ["Corporate Finance", "FP&A", "Financial Analysis"]
+
+        matched = [s for s in (fallback_skills or []) if s.lower() in t_low]
+        if matched:
+            return matched[:4]
+        tech_map = [
+            ("pytorch", "PyTorch"), ("cuda", "CUDA"), ("transformer", "Transformers"),
+            ("cache", "Caching"), ("lru", "Caching"), ("distributed", "Distributed Systems"),
+            ("kafka", "Kafka"), ("sql", "SQL"), ("database", "Databases"),
+            ("thread", "Concurrency"), ("lock", "Concurrency"), ("graph", "Graphs & Shortest Path"),
+            ("dp", "Dynamic Programming"), ("react", "React"), ("kubernetes", "Kubernetes"),
+        ]
+        inferred = []
+        for kw, label in tech_map:
+            if kw in t_low and label not in inferred:
+                inferred.append(label)
+        if inferred:
+            return inferred[:4]
+        return (fallback_skills[:3] if fallback_skills else ["Problem Solving", "Core Competency"])
+
+    def _infer_round(self, text: str, role_attrs: Optional[Dict[str, Any]] = None) -> tuple[int, str]:
+        """Infers interview round number (1 to 5) and title from question content and role family."""
         t_low = text.lower()
+        if role_attrs and role_attrs.get("role_family") == "FINANCE":
+            if any(k in t_low for k in ["stakeholder", "disagreement", "business leader", "changed a business decision", "tell me about a time", "describe a situation", "leadership"]):
+                return 5, "Round 5: Behavioral & Leadership"
+            if any(k in t_low for k in ["variance", "investigate", "forecast", "sensitivity", "bottleneck"]):
+                return 4, "Round 4: Analytical Problem Solving & Stakeholder Management"
+            if any(k in t_low for k in ["new product", "strategy", "launch", "business case", "capital allocation", "pricing"]):
+                return 3, "Round 3: Business Case & Strategic Finance"
+            if any(k in t_low for k in ["three-statement", "3-statement", "dcf", "excel", "pivottable", "xlookup", "financial model", "valuation"]):
+                return 2, "Round 2: Financial Modeling & Excel"
+            return 1, "Round 1: Finance Fundamentals & FP&A"
+
         if any(k in t_low for k in ["online assessment", "oa", "screening", "hackerrank", "codesignal"]):
             return 1, "Round 1: Online Assessment (OA)"
         if any(k in t_low for k in ["system design", "architecture", "distributed", "scalability", "microservices", "raft", "sharding", "p99", "kafka"]):
@@ -471,24 +535,26 @@ class LiveWebScraper:
                                 continue
                             if not title.endswith("?"):
                                 title = f"{title}?"
+                            if self._is_non_interview_noise(title):
+                                continue
                             q_text = strip_question_wrappers(title)
                             q_hash = get_dedup_hash(q_text)
                             if q_hash not in seen_hashes:
                                 seen_hashes.add(q_hash)
-                                r_num, r_name = self._infer_round(q_text)
+                                r_num, r_name = self._infer_round(q_text, role_attrs=role_attrs)
                                 candidate_questions.append({
                                     "company_name": comp_target,
                                     "job_role": role_target,
                                     "question_text": q_text,
-                                    "question_category": self.nlp.classify_question(q_text)["category"],
+                                    "question_category": self.nlp.classify_question(q_text, round_number=round_target or r_num, interview_round=r_name, role_family=role_attrs.get("role_family"))["category"],
                                     "difficulty": diff_target or self._infer_difficulty(q_text),
                                     "round_number": round_target or r_num,
                                     "interview_round": r_name,
-                                    "skills_tested": skills_target or list(it.get("tags", []))[:4] or [query_str],
+                                    "skills_tested": self._extract_question_skills(q_text, role_attrs, skills_target),
                                     "source_platform": f"StackExchange ({site})",
                                     "original_url": it.get("link", f"https://{site}.stackexchange.com"),
-                                    "confidence_score": 0.93,
-                                    "verification_status": "VERIFIED",
+                                    "confidence_score": 0.90,
+                                    "verification_status": "COMMUNITY_DISCUSSION",
                                     "years_of_experience": yoe_target,
                                 })
             except Exception as e:
@@ -596,15 +662,22 @@ class LiveWebScraper:
                 logger.debug(f"GitHub dynamic fetch notice: {e}")
 
         # Execute real unblocked + platform network tasks concurrently
-        net_tasks = [fetch_stackexchange(), fetch_devto(), fetch_github_dynamic()]
         role_attrs = DynamicInterviewEngine.infer_role_attributes(role_target, skills_target)
+        is_tech_or_data = role_attrs.get("is_tech") or role_attrs.get("is_data") or role_attrs.get("is_ai_ml")
+        net_tasks = []
+        # Avoid pulling StackExchange (money) personal-finance chatter into Corporate Finance interviews
+        if role_attrs.get("role_family") != "FINANCE":
+            net_tasks.append(fetch_stackexchange())
+        if is_tech_or_data:
+            net_tasks.append(fetch_devto())
+            net_tasks.append(fetch_github_dynamic())
         if any(p.lower() in ["open web", "web", "blogs"] for p in platforms_target):
             net_tasks.append(fetch_open_web())
         if any(p.lower() in ["leetcode", "leetcode discuss"] for p in platforms_target) and role_attrs.get("is_tech"):
             net_tasks.append(fetch_leetcode())
         if any(p.lower() in ["geeksforgeeks", "gfg"] for p in platforms_target) and role_attrs.get("is_tech"):
             net_tasks.append(fetch_gfg())
-        if any(p.lower() in ["reddit", "reddit & community"] for p in platforms_target):
+        if any(p.lower() in ["reddit", "reddit & community"] for p in platforms_target) and is_tech_or_data:
             net_tasks.append(fetch_reddit())
 
         if net_tasks:
@@ -614,10 +687,81 @@ class LiveWebScraper:
                 pass
 
         # =========================================================================
-        # STAGE 5: Grounded Synthesis for Unindexed Roles & Custom Parameters
-        # Guarantees that any company, role (tech or finance or pm), YoE, skills,
-        # and round gets complete authentic, verified interview questions.
+        # STAGE 5: Grounded AI & Role-Calibrated Practice Synthesis
+        # Generates corporate/domain-accurate practice scenarios (never mislabeled
+        # as verified company leaks) with per-question skills and YoE calibration.
         # =========================================================================
+        if len(candidate_questions) < limit_target and role_attrs.get("role_family") == "FINANCE":
+            try:
+                from app.integrations.ai.provider_factory import get_ai_provider
+                from pydantic import BaseModel, Field as PydanticField
+
+                class _FinanceQ(BaseModel):
+                    round_number: int = PydanticField(ge=1, le=5)
+                    category: str
+                    difficulty: str
+                    question_text: str
+                    skills_tested: List[str] = Field(default_factory=list) if False else PydanticField(default_factory=list)
+
+                class _FinanceBatch(BaseModel):
+                    questions: List[_FinanceQ]
+
+                provider = get_ai_provider()
+                if provider.is_available():
+                    ai_count = min(15, limit_target - len(candidate_questions))
+                    fin_prompt = (
+                        f"Generate {ai_count} realistic, high-signal Corporate Finance / FP&A / Business Partnering "
+                        f"interview practice questions for '{comp_target}' targeting '{role_target}' ({yoe_target} yrs YoE).\n"
+                        "STRICT RULES:\n"
+                        "1. Focus strictly on Corporate Finance, FP&A, 3-Statement Modeling, DCF, Variance Analysis, "
+                        "Budgeting & Forecasting, Accounting (GAAP/IFRS), Business Strategy, and Stakeholder Management.\n"
+                        "2. NEVER include personal finance, retirement, mortgages, cars, or retail stock-picking.\n"
+                        "3. Map round_number 1-5 to: 1=Finance Fundamentals & FP&A, 2=Financial Modeling & Excel, "
+                        "3=Business Case & Strategic Finance, 4=Analytical Problem Solving & Stakeholder Management, 5=Behavioral & Leadership.\n"
+                        "4. Assign 2-3 specific skills actually tested by EACH individual question."
+                    )
+                    ai_resp = await provider.generate_structured(
+                        fin_prompt,
+                        _FinanceBatch,
+                        system_instruction="You are a senior Corporate Finance hiring manager. Return clean JSON.",
+                        temperature=0.3,
+                    )
+                    if ai_resp.is_success and ai_resp.structured_data:
+                        parsed_fin = _FinanceBatch.model_validate(ai_resp.structured_data)
+                        fin_round_names = {
+                            1: "Round 1: Finance Fundamentals & FP&A",
+                            2: "Round 2: Financial Modeling & Excel",
+                            3: "Round 3: Business Case & Strategic Finance",
+                            4: "Round 4: Analytical Problem Solving & Stakeholder Management",
+                            5: "Round 5: Behavioral & Leadership",
+                        }
+                        scraped_sources_count += 1
+                        for fq in parsed_fin.questions:
+                            cleaned_q_text = strip_question_wrappers(fq.question_text)
+                            q_hash = get_dedup_hash(cleaned_q_text)
+                            if q_hash not in seen_hashes:
+                                seen_hashes.add(q_hash)
+                                rn = fq.round_number
+                                r_name = fin_round_names.get(rn, fin_round_names[1])
+                                cat = self.nlp.classify_question(cleaned_q_text, round_number=rn, interview_round=r_name, role_family="FINANCE")["category"]
+                                candidate_questions.append({
+                                    "company_name": comp_target,
+                                    "job_role": role_target,
+                                    "question_text": cleaned_q_text,
+                                    "question_category": cat,
+                                    "difficulty": diff_target or fq.difficulty or "Medium",
+                                    "round_number": rn,
+                                    "interview_round": r_name,
+                                    "skills_tested": fq.skills_tested[:4] or self._extract_question_skills(cleaned_q_text, role_attrs, skills_target),
+                                    "source_platform": "AI Recommended Practice Scenario",
+                                    "original_url": f"https://www.{comp_target.lower().replace(' ', '')}.com/careers/interview-guide",
+                                    "confidence_score": 0.92,
+                                    "verification_status": "PRACTICE_SCENARIO",
+                                    "years_of_experience": yoe_target,
+                                })
+            except Exception as e:
+                logger.debug(f"Finance AI synthesis notice: {e}")
+
         if len(candidate_questions) < limit_target:
             try:
                 tier_label, _, _ = DynamicInterviewEngine.infer_seniority_tier(yoe_target)
@@ -639,19 +783,21 @@ class LiveWebScraper:
                         q_hash = get_dedup_hash(cleaned_q_text)
                         if q_hash not in seen_hashes:
                             seen_hashes.add(q_hash)
+                            r_name = r_meta.get("name", f"Round {rn}: Technical Assessment")
+                            cat = self.nlp.classify_question(cleaned_q_text, round_number=rn, interview_round=r_name, role_family=role_attrs.get("role_family"))["category"]
                             candidate_questions.append({
                                 "company_name": comp_target,
                                 "job_role": role_target,
                                 "question_text": cleaned_q_text,
-                                "question_category": sq.get("category", "Domain Competency"),
+                                "question_category": cat if role_attrs.get("role_family") == "FINANCE" else sq.get("category", cat),
                                 "difficulty": diff_target or sq.get("difficulty", "Medium"),
                                 "round_number": rn,
-                                "interview_round": r_meta.get("name", f"Round {rn}: Technical Assessment"),
-                                "skills_tested": sq.get("skills_tested", skills_target),
-                                "source_platform": "Live Web Intelligence & Verified Debriefs",
+                                "interview_round": r_name,
+                                "skills_tested": self._extract_question_skills(cleaned_q_text, role_attrs, skills_target),
+                                "source_platform": "AI Recommended Practice Scenario",
                                 "original_url": f"https://www.{comp_target.lower().replace(' ', '')}.com/careers/interview-guide",
-                                "confidence_score": 0.94,
-                                "verification_status": "VERIFIED",
+                                "confidence_score": 0.90,
+                                "verification_status": "PRACTICE_SCENARIO",
                                 "years_of_experience": yoe_target,
                             })
                         if len(candidate_questions) >= limit_target:

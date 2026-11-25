@@ -354,6 +354,7 @@ class FallbackNLPModel:
         question_text: str,
         round_number: Optional[int] = None,
         interview_round: Optional[str] = None,
+        role_family: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Dynamically classifies question topic domain and cognitive difficulty level
@@ -382,6 +383,30 @@ class FallbackNLPModel:
             "retention curve", "dau/mau", "dau", "mau", "prd", "personas", "gong", "okr"
         ]) or (bool(words & {"product", "persona", "personas", "retention", "onboarding"}) and bool(words & {"metric", "metrics", "feature", "launch", "roadmap"})):
             category = "Product Management"
+
+        # Priority 1B: Corporate Finance & FP&A (must precede tech categories)
+        elif role_family == "FINANCE" or any(k in text_lower for k in [
+            "dcf", "wacc", "fp&a", "variance analysis", "three-statement", "3-statement",
+            "ebitda", "operating profit", "operating budget", "financial forecast", "financial model",
+            "gaap", "ifrs", "depreciation", "amortization", "cecl", "credit rating", "terminal value",
+            "capital allocation", "sensitivity analysis", "balance sheet", "income statement", "cash flow statement"
+        ]):
+            if any(k in text_lower for k in ["dcf", "wacc", "terminal value", "three-statement", "3-statement", "financial model", "sensitivity", "valuation", "value a business", "valuing"]):
+                category = "Financial Modeling & Valuation"
+            elif any(k in text_lower for k in ["budget", "forecast", "variance", "operating profit", "actual performance"]):
+                category = "Budgeting & Forecasting"
+            elif any(k in text_lower for k in ["depreciation", "gaap", "ifrs", "cecl", "accounting", "balance sheet", "income statement", "cash flow"]):
+                category = "Accounting & Financial Reporting"
+            elif any(k in text_lower for k in ["risk", "credit rating", "hedging", "exposure", "liquidity"]):
+                category = "Financial Risk Management"
+            elif any(k in text_lower for k in ["stakeholder", "disagreement", "business leader", "executive", "changed a business decision", "tell me about a time", "describe a situation"]):
+                category = "Leadership & Stakeholder Management"
+            elif any(k in text_lower for k in ["strategy", "new product", "bottleneck", "market", "business impact", "pricing", "m&a"]):
+                category = "Business Strategy & Decision Making"
+            elif "fp&a" in text_lower:
+                category = "Financial Planning & Analysis (FP&A)"
+            else:
+                category = "Corporate Finance"
 
         # Priority 2: System Design & Distributed Systems (must precede Arrays for 'sliding window rate limiter')
         elif any(k in text_lower for k in [
@@ -422,8 +447,8 @@ class FallbackNLPModel:
         # Priority 6: Computer Networks
         elif any(k in text_lower for k in [
             "tcp", "udp", "http/2", "http/3", "grpc", "dns lookup", "tls handshake", "socket",
-            "websocket", "packet loss", "congestion control", "cin/syn", "ack", "flow control", "multiplexing"
-        ]) or bool(words & {"network", "cidr", "subnet", "firewall", "gateway", "reverse proxy"}):
+            "websocket", "packet loss", "congestion control", "syn/ack", "flow control", "multiplexing"
+        ]) or bool(words & {"network", "cidr", "subnet", "firewall", "gateway", "reverse proxy", "ack", "syn"}):
             category = "Computer Networks"
 
         # Priority 7: Machine Learning & AI
@@ -476,7 +501,9 @@ class FallbackNLPModel:
 
         # Priority 13: Canonical Fallback (Context-Aware)
         else:
-            if is_r5:
+            if role_family == "FINANCE":
+                category = "Corporate Finance"
+            elif is_r5:
                 category = "HR and Behavioral"
             elif is_r4:
                 category = "System Design"
