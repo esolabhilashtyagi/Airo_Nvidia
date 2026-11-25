@@ -315,7 +315,7 @@ async def practice_company_question(
     _candidate: Optional[CandidateProfile] = Depends(get_optional_candidate_profile),
 ):
     """Evaluate candidate practice response against authentic company interview standards."""
-    result = InterviewIntelligenceBridge.evaluate_practice_answer(
+    result = await InterviewIntelligenceBridge.evaluate_practice_answer(
         question_id=payload.question_id,
         user_response=payload.user_response,
     )
