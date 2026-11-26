@@ -23,11 +23,11 @@ const provenanceLabel: Record<Question['source_provenance'], string> = {
 
 const CANONICAL_ROUNDS = [
   { id: '', label: 'All Rounds' },
-  { id: '1', label: 'Round 1: OA & Screening', badge: '💻 OA' },
-  { id: '2', label: 'Round 2: Core Coding (DSA)', badge: '⚡ DSA' },
-  { id: '3', label: 'Round 3: Low-Level Design (LLD)', badge: '📐 LLD' },
-  { id: '4', label: 'Round 4: System Design (HLD)', badge: '🏗️ HLD' },
-  { id: '5', label: 'Round 5: Behavioral & HR', badge: '🤝 HR' },
+  { id: '1', label: 'Round 1: Screening & Fundamentals' },
+  { id: '2', label: 'Round 2: Core Craft & Execution' },
+  { id: '3', label: 'Round 3: Applied Design & Case Study' },
+  { id: '4', label: 'Round 4: Architecture & Strategy' },
+  { id: '5', label: 'Round 5: Behavioral & Leadership' },
 ];
 
 export function QuestionBankPage() {
@@ -113,33 +113,11 @@ export function QuestionBankPage() {
   const [scrapingLive, setScrapingLive] = useState(false);
   const [scrapeSuccessMsg, setScrapeSuccessMsg] = useState('');
   const [targetYoE, setTargetYoE] = useState<number>(3.5);
-  const [targetSkills, setTargetSkills] = useState<string>('Python, Distributed Systems, Concurrency, Algorithms');
-  const [targetRole, setTargetRole] = useState<string>('Software Engineer');
+  const [targetSkills, setTargetSkills] = useState<string>('');
+  const [targetRole, setTargetRole] = useState<string>('');
   const [customRoleInput, setCustomRoleInput] = useState<string>('');
-  const [availableRoles, setAvailableRoles] = useState<string[]>([
-    'Software Engineer',
-    'Senior Software Engineer',
-    'Backend Engineer',
-    'Fullstack Engineer',
-    'Frontend Engineer',
-    'Machine Learning Engineer',
-    'Distributed Systems Engineer',
-    'Senior Data Engineer',
-    'DevOps / SRE Engineer',
-    'Product Manager',
-  ]);
-  const [availableCategories, setAvailableCategories] = useState<string[]>([
-    'Data Structures and Algorithms',
-    'System Design',
-    'Trees and Graphs',
-    'Arrays and Strings',
-    'Dynamic Programming',
-    'Object-Oriented Programming',
-    'Operating Systems',
-    'Computer Networks',
-    'DBMS and SQL',
-    'HR and Behavioral',
-  ]);
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [customCompanyInput, setCustomCompanyInput] = useState<string>('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 

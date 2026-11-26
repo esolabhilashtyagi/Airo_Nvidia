@@ -6,43 +6,6 @@ import type { Module } from '../../types';
 
 type TopicExploration = Awaited<ReturnType<typeof modulesApi.exploreTopic>>;
 
-const BROAD_TOPIC_PRESETS = [
-  'System Design',
-  'Generative AI & RAG',
-  'Distributed Systems',
-  'Data Structures & Algorithms',
-  'Cloud & Kubernetes',
-  'SQL & Database Internals',
-];
-
-type LessonResources = { article: string; practice: string; video: string };
-
-const moduleResources: Record<string, LessonResources> = {
-  'Data Structures & Scalable Algorithms': {
-    article: 'https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-spring-2020/resources/lecture-videos/',
-    practice: 'https://www.geeksforgeeks.org/dsa/data-structures-and-algorithms-online-quiz/',
-    video: 'https://www.youtube.com/watch?v=CHhwJjR0mZA',
-  },
-  'Distributed Systems & REST Architecture': {
-    article: 'https://www.ibm.com/think/topics/cap-theorem',
-    practice: 'https://www.nbktechworld.com/topics/distributed-systems/cap-and-quorums',
-    video: 'https://www.youtube.com/watch?v=_RbsFXWRZ10',
-  },
-};
-
-const lessonResourceLabels: Record<string, { article: string; practice: string; video: string }> = {
-  'Caching Strategies & Database Partitioning': {
-    article: 'https://redis.io/docs/latest/develop/use/client-side-caching/',
-    practice: 'https://shardcraft.dev/caching/recap-and-quiz/',
-    video: 'https://www.youtube.com/watch?v=U3RkDLtS7uY',
-  },
-  'CAP Theorem & Consistency Models': {
-    article: 'https://www.ibm.com/think/topics/cap-theorem',
-    practice: 'https://www.nbktechworld.com/topics/distributed-systems/cap-and-quorums',
-    video: 'https://www.youtube.com/watch?v=_RbsFXWRZ10',
-  },
-};
-
 export function ModulesPage() {
   const [searchParams] = useSearchParams();
   const [modules, setModules] = useState<Module[]>([]);
@@ -179,24 +142,26 @@ export function ModulesPage() {
             <span>{exploringTopic ? 'Generating…' : 'Explore topic'}</span>
           </button>
         </form>
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-slate-400">Popular:</span>
-          {BROAD_TOPIC_PRESETS.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              onClick={() => void handleExploreTopic(preset)}
-              disabled={exploringTopic}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                selectedTopic?.broad_topic === preset
-                  ? 'bg-violet-100 text-violet-800 ring-1 ring-violet-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-violet-50 hover:text-violet-700'
-              }`}
-            >
-              {preset}
-            </button>
-          ))}
-        </div>
+        {modules.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-400">From your modules:</span>
+            {modules.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => void handleExploreTopic(m.title)}
+                disabled={exploringTopic}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  selectedTopic?.broad_topic === m.title
+                    ? 'bg-violet-100 text-violet-800 ring-1 ring-violet-300'
+                    : 'bg-slate-100 text-slate-600 hover:bg-violet-50 hover:text-violet-700'
+                }`}
+              >
+                {m.title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {topicError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{topicError}</div>}
@@ -397,16 +362,21 @@ export function ModulesPage() {
             {selected.progress_status === 'not_started' && <button type="button" onClick={() => void startModule()} className="mt-4 rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white">Start module</button>}
             <div className="mt-6 space-y-3">{selected.lessons.map((lesson, index) => {
               const completed = selected.completed_lesson_ids?.includes(lesson.id) ?? false;
-              const resources = lessonResourceLabels[lesson.title] ?? moduleResources[selected.title];
               return <section key={lesson.id} className="rounded-lg border border-slate-200 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Lesson {index + 1} · {lesson.duration_minutes} min</p><h3 className="mt-1 font-semibold text-slate-900">{lesson.title}</h3></div>
                 {completed ? <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700"><CheckCircle2 className="h-4 w-4" />Completed</span> : <button type="button" disabled={!!savingLesson} onClick={() => void completeLesson(lesson.id)} className="rounded-lg border border-violet-700 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50">{savingLesson === lesson.id ? 'Saving…' : 'Mark complete'}</button>}</div>
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{lesson.content}</p>
-                {resources && <nav aria-label={`${lesson.title} learning resources`} className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-sm">
-                  <a href={resources.article} target="_blank" rel="noreferrer" className="font-medium text-violet-800 underline">Read article / course</a>
-                  <a href={resources.practice} target="_blank" rel="noreferrer" className="font-medium text-violet-800 underline">Practice quiz</a>
-                  <a href={resources.video} target="_blank" rel="noreferrer" className="font-medium text-violet-800 underline">Watch video</a>
-                </nav>}
+                <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-slate-100 pt-3 text-xs">
+                  <button
+                    type="button"
+                    disabled={exploringTopic}
+                    onClick={() => void handleExploreTopic(lesson.title)}
+                    className="inline-flex items-center gap-1.5 font-semibold text-violet-700 hover:text-violet-900 hover:underline disabled:opacity-50"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Explore live videos, blogs & courses for this lesson</span>
+                  </button>
+                </div>
               </section>;
             })}</div>
           </article>}
