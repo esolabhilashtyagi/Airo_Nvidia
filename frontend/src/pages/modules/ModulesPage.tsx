@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BookOpen, CheckCircle2, Clock3, ExternalLink, FileText, GraduationCap, PlayCircle, Sparkles } from 'lucide-react';
+import { candidatesApi } from '../../api/candidates';
 import { modulesApi } from '../../api/services';
 import type { Module } from '../../types';
 
 type TopicExploration = Awaited<ReturnType<typeof modulesApi.exploreTopic>>;
+const STORAGE_KEY = 'aairo_explored_topics_v1';
 
 export function ModulesPage() {
   const [searchParams] = useSearchParams();
@@ -17,20 +19,57 @@ export function ModulesPage() {
   const [subtopicCount, setSubtopicCount] = useState(4);
   const [exploringTopic, setExploringTopic] = useState(false);
   const [topicError, setTopicError] = useState('');
-  const [exploredTopics, setExploredTopics] = useState<TopicExploration[]>([]);
+  const [exploredTopics, setExploredTopics] = useState<TopicExploration[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? (JSON.parse(saved) as TopicExploration[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [profileTopics, setProfileTopics] = useState<string[]>([]);
   const [completedSubtopics, setCompletedSubtopics] = useState<Record<string, number[]>>({});
   const [activeResTab, setActiveResTab] = useState<Record<string, 'videos' | 'blogs' | 'courses'>>({});
-  const selectedTopic = exploredTopics.find((t) => `topic:${t.broad_topic}` === selectedId) ?? null;
-  const selected = selectedTopic ? null : (modules.find((module) => module.id === selectedId) ?? modules[0]);
   const requestedModuleId = searchParams.get('moduleId');
+  const selectedTopic = exploredTopics.find((t) => `topic:${t.broad_topic}` === selectedId) ?? exploredTopics[0] ?? null;
+  const selected = selectedTopic ? null : (requestedModuleId ? (modules.find((module) => module.id === requestedModuleId) ?? null) : null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(exploredTopics.slice(0, 10)));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [exploredTopics]);
 
   const loadModules = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const result = await modulesApi.listModules();
-      setModules(result ?? []);
-      setSelectedId((current) => result?.find((module) => module.id === requestedModuleId)?.id || current || result?.[0]?.id || '');
+      const [profileRes, modsRes] = await Promise.all([
+        candidatesApi.getProfile().catch(() => null),
+        requestedModuleId ? modulesApi.listModules().catch(() => []) : Promise.resolve([]),
+      ]);
+      setModules(modsRes ?? []);
+
+      const derived: string[] = [];
+      if (profileRes?.target_role) derived.push(profileRes.target_role);
+      for (const sk of profileRes?.key_skills ?? []) {
+        if (sk && !derived.includes(sk)) derived.push(sk);
+      }
+      setProfileTopics(derived.slice(0, 8));
+
+      if (requestedModuleId && modsRes?.some((m) => m.id === requestedModuleId)) {
+        setSelectedId(requestedModuleId);
+      } else if (exploredTopics.length > 0) {
+        setSelectedId((cur) => cur || `topic:${exploredTopics[0].broad_topic}`);
+      } else if (derived.length > 0) {
+        const autoData = await modulesApi.exploreTopic(derived[0], subtopicCount);
+        if (autoData) {
+          setExploredTopics([autoData]);
+          setSelectedId(`topic:${autoData.broad_topic}`);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Learning modules could not be loaded.');
     } finally {
@@ -142,22 +181,22 @@ export function ModulesPage() {
             <span>{exploringTopic ? 'Generating…' : 'Explore topic'}</span>
           </button>
         </form>
-        {modules.length > 0 && (
+        {profileTopics.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-medium text-slate-400">From your modules:</span>
-            {modules.map((m) => (
+            <span className="text-xs font-medium text-slate-400">From your profile:</span>
+            {profileTopics.map((topicName) => (
               <button
-                key={m.id}
+                key={topicName}
                 type="button"
-                onClick={() => void handleExploreTopic(m.title)}
+                onClick={() => void handleExploreTopic(topicName)}
                 disabled={exploringTopic}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                  selectedTopic?.broad_topic === m.title
+                  selectedTopic?.broad_topic === topicName
                     ? 'bg-violet-100 text-violet-800 ring-1 ring-violet-300'
                     : 'bg-slate-100 text-slate-600 hover:bg-violet-50 hover:text-violet-700'
                 }`}
               >
-                {m.title}
+                {topicName}
               </button>
             ))}
           </div>
