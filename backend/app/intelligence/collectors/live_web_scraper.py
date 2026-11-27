@@ -172,22 +172,45 @@ class LiveWebScraper:
         return clean
 
     def _is_non_interview_noise(self, text: str) -> bool:
-        """Reject personal finance, lifestyle, banking, and non-interview community chatter."""
+        """Reject personal finance, lifestyle, debugging help, textbook requests, and non-interview chatter."""
         t_low = (text or "").lower()
         noise_terms = [
             "mortgage", "down payment", "retirement fund", "riester", "80-year-old", "dad invest",
             "gambling", "wire transfer", "intermediary bank", "pronounce", "procounce",
             "additional income", "full-time job", "new car vs used", "compare value",
             "index funds vs", "improve a person's finance knowledge", "help my non-retired",
+            # Resource / book / tutorial requests
+            "textbook", "book recommendation", "which course", "best resource", "study guide",
+            # Personal debugging / Colab / homework help
+            "my code", "my model", "my dataset", "my training", "colab", "jupyter",
+            "minimal working example", "issue at ", "error when", "doesn't work", "not improving",
+            "how to load ", "how can i load", "in my script", "from local/",
+            # Career polls / vague meta-questions / blog fragments
+            "how much of ", "when to use what", "is it worth", "should i learn",
+            "the post compares", "in this article", "in this post", "in this blog",
+            "open source ", "recent deep learning",
         ]
         return any(term in t_low for term in noise_terms)
 
     def _is_relevant_to_request(
         self, text: str, role_attrs: Dict[str, Any], skills_target: List[str]
     ) -> bool:
-        """Ensure scraped open-source questions actually match the requested role and skills."""
-        t_low = (text or "").lower()
-        if len(t_low.split()) < 7 or len(t_low) < 40:
+        """Ensure scraped open-source questions actually match the requested role, skills, and strict interview quality."""
+        t = (text or "").strip()
+        t_low = t.lower()
+        if len(t_low.split()) < 9 or len(t_low) < 50:
+            return False
+
+        if self._is_non_interview_noise(t):
+            return False
+
+        # Require an actual interview-style prompt or interrogative structure (rejects noun-phrase fragments ending in '?')
+        interrogative_or_prompt = [
+            "how ", "why ", "what is ", "what are ", "when ", "which ", "explain ", "design ",
+            "implement ", "architect ", "compare ", "contrast ", "describe ", "walk through ",
+            "write ", "given ", "suppose ", "optimize ", "diagnose ", "evaluate ", "build ",
+        ]
+        if not any(t_low.startswith(p) or f" {p}" in t_low for p in interrogative_or_prompt):
             return False
 
         # Always reject off-topic PM/Marketing chatter in engineering/AI/finance roles
@@ -323,7 +346,10 @@ class LiveWebScraper:
         """Strictly validates whether candidate text is an actual technical interview question."""
         t = text.strip()
         words = t.split()
-        if len(words) < 8 or len(t) < 35 or len(t) > 700:
+        if len(words) < 9 or len(t) < 50 or len(t) > 700:
+            return False
+
+        if self._is_non_interview_noise(t):
             return False
 
         # Reject multi-bullet syllabus/topic dumps (e.g. "- Firewalls - Different type - 3 way handshaking ... ?")

@@ -132,10 +132,22 @@ class InterviewIntelligenceBridge:
         offset = (page - 1) * limit
         clauses = [
             "verification_status = 'VERIFIED'",
+            "LENGTH(question_text) >= 50",
             "question_text NOT LIKE '%in Data Structures, Algorithms, System Design%'",
             "question_text NOT LIKE '%calibrated for %'",
             "question_text NOT LIKE '- % - %'",
             "question_text NOT LIKE '%: - %'",
+            "LOWER(question_text) NOT LIKE '%textbook%'",
+            "LOWER(question_text) NOT LIKE '%colab%'",
+            "LOWER(question_text) NOT LIKE '%how much of %'",
+            "LOWER(question_text) NOT LIKE '%when to use what%'",
+            "LOWER(question_text) NOT LIKE '%the post compares%'",
+            "LOWER(question_text) NOT LIKE '%minimal working example%'",
+            "LOWER(question_text) NOT LIKE '%arbitrary number of inputs%'",
+            "LOWER(question_text) NOT LIKE '%open source anomaly detection%'",
+            "LOWER(question_text) NOT LIKE '%issue at training%'",
+            "LOWER(question_text) NOT LIKE '%loss is decreasing%'",
+            "LOWER(question_text) NOT LIKE '%how to load %'",
         ]
         params: List[Any] = []
 
