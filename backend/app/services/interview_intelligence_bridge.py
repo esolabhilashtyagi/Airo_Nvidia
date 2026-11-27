@@ -146,6 +146,10 @@ class InterviewIntelligenceBridge:
         if role:
             clauses.append("job_role LIKE ?")
             params.append(f"%{role.strip()}%")
+            r_low = role.strip().lower()
+            if not any(k in r_low for k in ["product", "pm", "marketing", "sales", "growth"]):
+                clauses.append("question_text NOT LIKE 'Sense: %'")
+                clauses.append("question_text NOT LIKE 'CAC: %'")
 
         if category:
             clauses.append("question_category = ?")

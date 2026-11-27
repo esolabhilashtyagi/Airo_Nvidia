@@ -182,6 +182,52 @@ class LiveWebScraper:
         ]
         return any(term in t_low for term in noise_terms)
 
+    def _is_relevant_to_request(
+        self, text: str, role_attrs: Dict[str, Any], skills_target: List[str]
+    ) -> bool:
+        """Ensure scraped open-source questions actually match the requested role and skills."""
+        t_low = (text or "").lower()
+        if len(t_low.split()) < 7 or len(t_low) < 40:
+            return False
+
+        # Always reject off-topic PM/Marketing chatter in engineering/AI/finance roles
+        pm_mkt_terms = ["subscription monetization", "customer lifetime value", "cac:", "ltv", "paid acquisition", "google maps enterprise fleets"]
+        if role_attrs.get("role_family") not in ["PRODUCT", "MARKETING", "SALES"]:
+            if any(term in t_low for term in pm_mkt_terms):
+                return False
+
+        skill_hits = any(s.lower() in t_low for s in (skills_target or []) if len(s.strip()) >= 2)
+        if skill_hits:
+            return True
+
+        if role_attrs.get("is_ai_ml"):
+            ai_terms = [
+                "pytorch", "tensorflow", "transformer", "attention", "rag", "llm", "model",
+                "training", "inference", "embedding", "vector", "neural", "gradient", "loss",
+                "quantization", "fine-tun", "cuda", "gpu", "machine learning", "deep learning",
+                "lstm", "cnn", "nlp", "token", "classification", "regression", "anomaly",
+                "clustering", "feature", "dataset", "backprop", "overfitting", "rag", "langchain",
+            ]
+            return any(term in t_low for term in ai_terms)
+
+        if role_attrs.get("role_family") == "FINANCE":
+            fin_terms = [
+                "finance", "financial", "dcf", "wacc", "ebitda", "fp&a", "variance", "budget",
+                "forecast", "accounting", "gaap", "ifrs", "balance sheet", "cash flow", "valuation",
+                "revenue", "margin", "depreciation", "audit", "treasury", "credit", "excel",
+            ]
+            return any(term in t_low for term in fin_terms)
+
+        if role_attrs.get("is_design"):
+            design_terms = ["ux", "ui", "design", "wireframe", "prototype", "figma", "accessibility", "usability", "user research"]
+            return any(term in t_low for term in design_terms)
+
+        if role_attrs.get("is_product"):
+            pm_terms = ["product", "metric", "north star", "roadmap", "experiment", "a/b", "retention", "funnel", "user", "pricing"]
+            return any(term in t_low for term in pm_terms)
+
+        return True
+
     def _extract_question_skills(
         self, q_text: str, role_attrs: Dict[str, Any], fallback_skills: List[str]
     ) -> List[str]:
@@ -424,6 +470,8 @@ class LiveWebScraper:
                 scraped_sources_count += min(len(lc_items), 3)
                 for item in lc_items:
                     for eq in self._extract_questions_from_text(item.get("raw_text", ""), default_company=comp_target):
+                        if not self._is_relevant_to_request(eq["question_text"], role_attrs, skills_target):
+                            continue
                         q_hash = get_dedup_hash(eq["question_text"])
                         if q_hash not in seen_hashes:
                             seen_hashes.add(q_hash)
@@ -453,6 +501,8 @@ class LiveWebScraper:
                 scraped_sources_count += min(len(gfg_items), 3)
                 for item in gfg_items:
                     for eq in self._extract_questions_from_text(item.get("raw_text", ""), default_company=comp_target):
+                        if not self._is_relevant_to_request(eq["question_text"], role_attrs, skills_target):
+                            continue
                         q_hash = get_dedup_hash(eq["question_text"])
                         if q_hash not in seen_hashes:
                             seen_hashes.add(q_hash)
@@ -482,6 +532,8 @@ class LiveWebScraper:
                 scraped_sources_count += min(len(rc_items), 3)
                 for item in rc_items:
                     for eq in self._extract_questions_from_text(item.get("raw_text", ""), default_company=comp_target):
+                        if not self._is_relevant_to_request(eq["question_text"], role_attrs, skills_target):
+                            continue
                         q_hash = get_dedup_hash(eq["question_text"])
                         if q_hash not in seen_hashes:
                             seen_hashes.add(q_hash)
@@ -506,67 +558,69 @@ class LiveWebScraper:
         async def fetch_stackexchange():
             nonlocal scraped_sources_count
             try:
-                site = "softwareengineering"
+                sites = ["softwareengineering"]
                 if role_attrs.get("is_design"):
-                    site = "ux"
-                elif role_attrs.get("is_finance"):
-                    site = "money"
-                elif role_attrs.get("is_ai_ml") or role_attrs.get("is_data"):
-                    site = "datascience"
+                    sites = ["ux"]
+                elif role_attrs.get("role_family") == "FINANCE":
+                    sites = ["money"]
+                elif role_attrs.get("is_ai_ml"):
+                    sites = ["datascience", "ai"]
+                elif role_attrs.get("is_data"):
+                    sites = ["datascience", "stats"]
 
-                q_terms = []
-                if skills_target:
-                    q_terms.append(skills_target[0])
-                elif role_attrs.get("is_tech"):
-                    q_terms.append("system design")
-                else:
-                    q_terms.append(role_target.split()[0])
-                query_str = " ".join(q_terms)
+                queries_to_run = [s for s in (skills_target or [])[:2] if s.strip()]
+                if not queries_to_run:
+                    queries_to_run = ["system design" if role_attrs.get("is_tech") and not role_attrs.get("is_ai_ml") else role_target]
 
-                async with httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "AAIRO-Intel/1.0"}) as client:
-                    resp = await client.get(
-                        "https://api.stackexchange.com/2.3/search/advanced",
-                        params={
-                            "order": "desc",
-                            "sort": "votes",
-                            "q": query_str,
-                            "site": site,
-                            "pagesize": min(50, 15 * scrape_scale),
-                            "filter": "withbody",
-                        },
-                    )
-                    if resp.status_code == 200:
-                        items = resp.json().get("items", [])
-                        if items:
-                            scraped_sources_count += 1
-                        for it in items:
-                            title = html.unescape(str(it.get("title") or "").strip())
-                            if not title or len(title) < 15:
+                async with httpx.AsyncClient(timeout=8.0, headers={"User-Agent": "AAIRO-Intel/1.0"}) as client:
+                    for site in sites:
+                        for query_str in queries_to_run:
+                            resp = await client.get(
+                                "https://api.stackexchange.com/2.3/search/advanced",
+                                params={
+                                    "order": "desc",
+                                    "sort": "votes",
+                                    "q": query_str,
+                                    "site": site,
+                                    "pagesize": min(50, 15 * scrape_scale),
+                                    "filter": "withbody",
+                                },
+                            )
+                            if resp.status_code != 200:
                                 continue
-                            if not title.endswith("?"):
-                                title = f"{title}?"
-                            if self._is_non_interview_noise(title):
-                                continue
-                            q_text = strip_question_wrappers(title)
-                            q_hash = get_dedup_hash(q_text)
-                            if q_hash not in seen_hashes:
-                                seen_hashes.add(q_hash)
-                                r_num, r_name = self._infer_round(q_text, role_attrs=role_attrs)
-                                candidate_questions.append({
-                                    "company_name": comp_target,
-                                    "job_role": role_target,
-                                    "question_text": q_text,
-                                    "question_category": self.nlp.classify_question(q_text, round_number=round_target or r_num, interview_round=r_name, role_family=role_attrs.get("role_family"))["category"],
-                                    "difficulty": diff_target or self._infer_difficulty(q_text),
-                                    "round_number": round_target or r_num,
-                                    "interview_round": r_name,
-                                    "skills_tested": self._extract_question_skills(q_text, role_attrs, skills_target),
-                                    "source_platform": f"StackExchange ({site})",
-                                    "original_url": it.get("link", f"https://{site}.stackexchange.com"),
-                                    "confidence_score": 0.90,
-                                    "verification_status": "COMMUNITY_DISCUSSION",
-                                    "years_of_experience": yoe_target,
-                                })
+                            items = resp.json().get("items", [])
+                            if items:
+                                scraped_sources_count += 1
+                            for it in items:
+                                title = html.unescape(str(it.get("title") or "").strip())
+                                if not title or len(title) < 20:
+                                    continue
+                                if not title.endswith("?"):
+                                    title = f"{title}?"
+                                if self._is_non_interview_noise(title):
+                                    continue
+                                q_text = strip_question_wrappers(title)
+                                if not self._is_relevant_to_request(q_text, role_attrs, skills_target):
+                                    continue
+                                q_hash = get_dedup_hash(q_text)
+                                if q_hash not in seen_hashes:
+                                    seen_hashes.add(q_hash)
+                                    r_num, r_name = self._infer_round(q_text, role_attrs=role_attrs)
+                                    candidate_questions.append({
+                                        "company_name": comp_target,
+                                        "job_role": role_target,
+                                        "question_text": q_text,
+                                        "question_category": self.nlp.classify_question(q_text, round_number=round_target or r_num, interview_round=r_name, role_family=role_attrs.get("role_family"))["category"],
+                                        "difficulty": diff_target or self._infer_difficulty(q_text),
+                                        "round_number": round_target or r_num,
+                                        "interview_round": r_name,
+                                        "skills_tested": self._extract_question_skills(q_text, role_attrs, skills_target),
+                                        "source_platform": f"StackExchange ({site})",
+                                        "original_url": it.get("link", f"https://{site}.stackexchange.com"),
+                                        "confidence_score": 0.90,
+                                        "verification_status": "COMMUNITY_DISCUSSION",
+                                        "years_of_experience": yoe_target,
+                                    })
             except Exception as e:
                 logger.debug(f"StackExchange fetch notice: {e}")
 
@@ -604,6 +658,8 @@ class LiveWebScraper:
                             scraped_sources_count += 1
                             extracted = self._extract_questions_from_text(body_md, default_company=comp_target)
                             for eq in extracted[:min(25, 8 * scrape_scale)]:
+                                if not self._is_relevant_to_request(eq["question_text"], role_attrs, skills_target):
+                                    continue
                                 q_hash = get_dedup_hash(eq["question_text"])
                                 if q_hash not in seen_hashes:
                                     seen_hashes.add(q_hash)
@@ -651,6 +707,8 @@ class LiveWebScraper:
                         scraped_sources_count += 1
                         extracted = self._extract_questions_from_text(raw_resp.text[:120000], default_company=comp_target)
                         for eq in extracted[:min(45, 15 * scrape_scale)]:
+                            if not self._is_relevant_to_request(eq["question_text"], role_attrs, skills_target):
+                                continue
                             q_hash = get_dedup_hash(eq["question_text"])
                             if q_hash not in seen_hashes:
                                 seen_hashes.add(q_hash)
