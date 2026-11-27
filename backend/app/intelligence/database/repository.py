@@ -548,18 +548,31 @@ class DynamicInterviewEngine:
         # Round 1: Screening & Core Craft Foundations
         # -------------------------------------------------------------------------
         elif r_num == 1:
-            if attr["is_tech"]:
+            if attr.get("is_ai_ml"):
                 q_texts = [
-                    f"[{company_name} Technical Screening]: Given high-scale production workloads at {company_name}, implement an optimal algorithm in {skills_str} that processes incoming data streams while maintaining O(1) space complexity and sub-millisecond execution latency. Explain how your solution handles edge cases and scale calibrated for {yoe_tier}.",
-                    f"[{company_name} Core Data Structures & Optimization]: Implement an in-memory caching and retrieval data structure in {skills_str} with O(1) average lookup and eviction policy (e.g., LRU or LFU) with thread-safe read/write operations suitable for {company_name}'s services.",
-                    f"[{company_name} Complexity & Edge Case Resiliency]: Walk through how your algorithmic solution in {skills_str} handles severe memory spikes, integer overflow, and streaming network disconnects under load calibrated for {yoe_tier}.",
-                    f"[{company_name} Sliding Window Maximum & Streams]: Given an continuous event stream, implement a sliding window aggregator that calculates moving minimums, maximums, and percentiles in O(1) amortized time per element in {skills_str}.",
-                    f"[{company_name} Binary Tree & Graph Cycle Detection]: Write an optimal algorithm in {skills_str} to detect dependencies or cycles in a DAG representing job schedules at {company_name}. Compare Kahn's topological sort vs DFS.",
-                    f"[{company_name} Prefix Sum & Range Lookups]: Design a data structure in {skills_str} that supports range sum and range update queries in O(log N) time using a Fenwick Tree (Binary Indexed Tree) or Segment Tree.",
-                    f"[{company_name} String Tokenization & Parsing]: Implement a high-performance string tokenizer in {skills_str} that parses serialized JSON/protocol payloads without excessive intermediate heap allocations.",
-                    f"[{company_name} Hash Collision Mitigation]: Compare open addressing vs chaining for hash maps in {skills_str}. What happens under high load factors when worst-case lookups degrade to O(N)?",
-                    f"[{company_name} Bit Manipulation & Bitmasks]: Implement a bitmask-based set operation in {skills_str} to represent and query user permissions across 64 feature flags with single CPU instruction latency.",
-                    f"[{company_name} Unit Testing & Regression Guardrails]: How do you structure property-based tests and fuzz tests in {skills_str} to uncover edge cases that manual unit tests miss?",
+                    f"Implement scaled dot-product self-attention from scratch in {primary_skill} (handling attention masks, numerical stability in softmax, and multi-head projection shapes) for {company_name}'s inference workloads.",
+                    f"Design a Retrieval-Augmented Generation (RAG) pipeline for {company_name} using {skills_str}. Explain your chunking strategy, hybrid dense+BM25 retrieval, and reranking trade-offs.",
+                    f"How do you diagnose and mitigate hallucinations in an enterprise RAG system at {company_name}, and which offline/online evaluation metrics (faithfulness, context recall, MRR) do you track?",
+                    f"Explain how KV-cache reduces autoregressive Transformer decoding latency from O(N^2) to O(N) per token, and how you manage GPU memory fragmentation under concurrent requests.",
+                    f"Compare LoRA, QLoRA, and full fine-tuning when adapting a 7B-70B foundation model for {company_name}'s domain tasks in {skills_str}.",
+                    f"Walk through how you debug vanishing/exploding gradients, NaN loss spikes, and mixed-precision (FP16/BF16) underflow during {primary_skill} training runs.",
+                    f"Compare INT8/FP8 post-training quantization (PTQ) vs quantization-aware training (QAT) for serving {company_name} models with strict P99 latency and accuracy SLAs.",
+                    f"How do you design an embedding drift and semantic search quality monitoring pipeline when {company_name}'s underlying corpus updates continuously?",
+                    f"Explain the difference between DistributedDataParallel (DDP) and Fully Sharded Data Parallel (FSDP) in PyTorch, and how gradient accumulation interacts with all-reduce communication.",
+                    f"Given an imbalanced classification or ranking dataset at {company_name}, compare focal loss, class weighting, and hard-negative mining in {skills_str}.",
+                ]
+            elif attr["is_tech"]:
+                q_texts = [
+                    f"Given high-scale production workloads at {company_name}, implement an optimal algorithm using {skills_str} that processes incoming data streams while maintaining O(1) space complexity and sub-millisecond execution latency.",
+                    f"Implement an in-memory caching and retrieval data structure with O(1) average lookup and eviction policy (LRU or LFU) with thread-safe read/write operations suitable for {company_name}'s services.",
+                    f"Walk through how your solution using {skills_str} handles severe memory spikes, integer overflow, and streaming network disconnects under heavy production load.",
+                    f"Given a continuous event stream, implement a sliding window aggregator that calculates moving minimums, maximums, and percentiles in O(1) amortized time per element.",
+                    f"Write an optimal algorithm to detect dependencies or cycles in a DAG representing job schedules at {company_name}. Compare Kahn's topological sort vs DFS.",
+                    f"Design a data structure that supports range sum and range update queries in O(log N) time using a Fenwick Tree (Binary Indexed Tree) or Segment Tree.",
+                    f"Implement a high-performance string tokenizer that parses serialized JSON/protocol payloads without excessive intermediate heap allocations.",
+                    f"Compare open addressing vs chaining for hash maps. What happens under high load factors when worst-case lookups degrade to O(N)?",
+                    f"Implement a bitmask-based set operation to represent and query user permissions across 64 feature flags with single CPU instruction latency.",
+                    f"How do you structure property-based tests and fuzz tests to uncover edge cases that manual unit tests miss?",
                 ]
             else:
                 q_texts = [
@@ -591,6 +604,17 @@ class DynamicInterviewEngine:
                     f"[{company_name} Connection Pool Tuning]: How do you size database connection pools and configure keepalive/idle timeout parameters to prevent thread exhaustion under a sudden 5x traffic surge at {company_name}?",
                     f"[{company_name} Zero-Allocation Parsing]: Write an allocation-free binary protocol parser in {skills_str} that operates directly over byte slices without heap copying.",
                     f"[{company_name} Thread Safety in Singleton Caches]: How do you ensure double-checked locking is implemented correctly with memory fences in {skills_str} to guarantee safe initialization across multi-core processors?",
+                ]
+            elif attr.get("is_ai_ml"):
+                q_texts = [
+                    f"Implement a custom PyTorch Dataset, DataLoader with dynamic padding/bucketing, and gradient-accumulated training loop for variable-length sequences at {company_name}.",
+                    f"Design an end-to-end vector index and semantic retrieval service using {skills_str} (HNSW vs IVF-PQ trade-offs, metadata filtering, and P99 query latency under 30ms).",
+                    f"Profile a slow Transformer training or inference step in {primary_skill}: how do you isolate CPU data-loader bottlenecks vs GPU kernel launch overhead vs host-to-device memory transfers?",
+                    f"Implement beam search vs nucleus (top-p) sampling with temperature scaling and repetition penalty for autoregressive text generation.",
+                    f"How do you design an automated LLM-as-a-Judge and golden-dataset regression harness before promoting a new prompt or fine-tuned checkpoint to production at {company_name}?",
+                    f"Explain FlashAttention's IO-aware tiling strategy and why reducing HBM reads/writes speeds up long-context Transformer training.",
+                    f"Design a multi-stage RAG reranking pipeline combining dense bi-encoder retrieval with a cross-encoder reranker without blowing up latency budgets.",
+                    f"How do you handle catastrophic forgetting and data contamination checks when continually pre-training or fine-tuning models on {company_name}'s domain corpus?",
                 ]
             elif attr["is_tech"]:
                 q_texts = [
@@ -679,6 +703,14 @@ class DynamicInterviewEngine:
                     f"[{company_name} Command Pattern with Undo/Redo]: Design a document vector editor or spreadsheet engine supporting infinite undo/redo stacks using the Command Pattern in {skills_str}.",
                     f"[{company_name} Clean Architecture & Dependency Inversion]: Explain how you decouple database repositories and third-party APIs from core domain business rules using Hexagonal / Clean Architecture in {skills_str}.",
                     f"[{company_name} API Versioning & Backward Compatibility]: How do you evolve public REST or gRPC contracts over multiple years without breaking existing third-party integrations?",
+                ]
+            elif attr.get("is_ai_ml"):
+                q_texts = [
+                    f"Architect a scalable multi-tenant LLM & RAG inference platform for {company_name} handling continuous batching (vLLM/PagedAttention), semantic caching, and GPU autoscaling.",
+                    f"Design an end-to-end training, evaluation, and canary deployment pipeline for {company_name}'s {primary_skill} models, including shadow traffic scoring and instant rollback.",
+                    f"How do you architect a low-latency multimodal or real-time recommendation/AI assistant pipeline at {company_name} balancing model quality, GPU cost per 1M tokens, and fallback routing?",
+                    f"Design a privacy-preserving RAG and guardrail layer for {company_name} covering PII redaction, prompt-injection defense, and tenant-isolated vector namespaces.",
+                    f"Compare speculative decoding, tensor parallelism, and pipeline parallelism when serving large Transformer models across multi-GPU nodes.",
                 ]
             elif attr["is_tech"]:
                 q_texts = [

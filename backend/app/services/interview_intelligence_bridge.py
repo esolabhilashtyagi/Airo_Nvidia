@@ -130,7 +130,13 @@ class InterviewIntelligenceBridge:
     ) -> Tuple[List[CompanyInterviewQuestionDTO], int]:
         """Fetch verified company questions with multi-facet filters and pagination."""
         offset = (page - 1) * limit
-        clauses = ["verification_status = 'VERIFIED'"]
+        clauses = [
+            "verification_status = 'VERIFIED'",
+            "question_text NOT LIKE '%in Data Structures, Algorithms, System Design%'",
+            "question_text NOT LIKE '%calibrated for %'",
+            "question_text NOT LIKE '- % - %'",
+            "question_text NOT LIKE '%: - %'",
+        ]
         params: List[Any] = []
 
         if company:
@@ -172,7 +178,7 @@ class InterviewIntelligenceBridge:
                        original_url, confidence_score, verification_status, skills_tested
                 FROM interview_questions
                 WHERE {where_sql}
-                ORDER BY round_number ASC, confidence_score DESC, id ASC
+                ORDER BY round_number ASC, id DESC
                 LIMIT ? OFFSET ?
             """
             cur.execute(data_query, params + [limit, offset])

@@ -280,6 +280,10 @@ class LiveWebScraper:
         if len(words) < 8 or len(t) < 35 or len(t) > 700:
             return False
 
+        # Reject multi-bullet syllabus/topic dumps (e.g. "- Firewalls - Different type - 3 way handshaking ... ?")
+        if t.count(" - ") >= 2 or ": -" in t or t.startswith("- "):
+            return False
+
         t_low = t.lower()
         for pat in GARBAGE_PATTERNS:
             if re.search(pat, t_low):
@@ -298,7 +302,10 @@ class LiveWebScraper:
             "array", "tree", "graph", "cache", "string", "query", "sql", "thread", "lock",
             "concurrency", "database", "latency", "system", "service", "algorithm", "dp",
             "heap", "queue", "stack", "list", "memory", "server", "metric", "network", "socket",
-            "sharding", "kafka", "redis", "transaction", "index", "raft", "paxos"
+            "sharding", "kafka", "redis", "transaction", "index", "raft", "paxos",
+            "pytorch", "tensorflow", "transformer", "attention", "rag", "embedding", "llm",
+            "model", "training", "inference", "gradient", "loss", "quantization", "fine-tun",
+            "token", "gpu", "cuda", "neural", "vector", "classification", "regression",
         ]
         has_tech = any(w in t_low for w in tech_words)
 
@@ -621,7 +628,8 @@ class LiveWebScraper:
         async def fetch_github_dynamic():
             nonlocal scraped_sources_count
             try:
-                search_q = f"{skills_target[0] if skills_target else role_target} interview questions"
+                role_q = "machine learning llm pytorch" if "ai" in role_target.lower() or "ml" in role_target.lower() else role_target
+                search_q = f"{' '.join(skills_target[:2]) if skills_target else role_q} interview questions"
                 async with httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "AAIRO-Intel/1.0"}) as client:
                     resp = await client.get(
                         "https://api.github.com/search/repositories",
