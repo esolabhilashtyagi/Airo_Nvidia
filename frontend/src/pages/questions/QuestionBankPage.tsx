@@ -145,7 +145,7 @@ export function QuestionBankPage() {
     ? availableIndustries.filter((ind) => ind.toLowerCase().includes(industrySearchInput.trim().toLowerCase()))
     : availableIndustries;
 
-  const [scrapeLimit, setScrapeLimit] = useState<number>(100);
+  const [scrapeLimit] = useState<number>(150);
   const [scrapePlatforms, setScrapePlatforms] = useState<string[]>([
     'LeetCode',
     'GeeksforGeeks',
@@ -1045,22 +1045,6 @@ export function QuestionBankPage() {
                   placeholder="e.g. Financial Modeling, DCF, Variance Analysis or Python, Distributed Systems, RAG"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 focus:outline-none"
                 />
-
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                    <span className="font-semibold text-slate-700">Max Questions:</span>
-                    <select
-                      value={scrapeLimit}
-                      onChange={(e) => setScrapeLimit(parseInt(e.target.value, 10))}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                    >
-                      <option value={30}>30 questions</option>
-                      <option value={50}>50 questions</option>
-                      <option value={100}>100 questions (Max)</option>
-                      <option value={150}>150 questions (Exhaustive)</option>
-                    </select>
-                  </label>
-                </div>
 
                 <div className="flex items-center justify-between pt-1">
                   <button
