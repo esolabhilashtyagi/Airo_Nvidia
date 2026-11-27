@@ -1107,19 +1107,19 @@ export function QuestionBankPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setFlowStep(1)}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Edit Flow
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => void handleLiveScrape()}
                       disabled={scrapingLive}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-violet-800 disabled:opacity-80"
                     >
                       <Search className="h-3.5 w-3.5" />
                       <span>{scrapingLive ? 'Generating...' : 'Regenerate'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFlowStep(1)}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Edit Flow
                     </button>
                     <button
                       type="button"
@@ -1345,93 +1345,106 @@ export function QuestionBankPage() {
             </div>
           )}
 
-          {/* Main Content Grid: Questions + Interactive Practice Pane */}
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-            {/* Question Cards List */}
-            <div className="space-y-3">
-              {companyLoading ? (
-                <div className="rounded-xl border bg-white p-10 text-center text-slate-600">
-                  <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-violet-700 border-t-transparent"></div>
-                  <p className="mt-2 text-sm font-medium">Loading authentic interview questions for {selectedCompany}…</p>
-                </div>
-              ) : companyQuestions.length ? (
-                companyQuestions.map((q) => (
+          {/* Question Cards in Two Columns Side by Side */}
+          <div>
+            {companyLoading ? (
+              <div className="rounded-xl border bg-white p-10 text-center text-slate-600">
+                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-violet-700 border-t-transparent"></div>
+                <p className="mt-2 text-sm font-medium">Loading authentic interview questions for {selectedCompany}…</p>
+              </div>
+            ) : companyQuestions.length ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                {companyQuestions.map((q) => (
                   <article
                     key={q.id}
-                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-300"
+                    onClick={() => openCompanyQuestion(q)}
+                    className="flex cursor-pointer flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-violet-400 hover:shadow-md"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="inline-block rounded-md bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-800">
-                          {q.company_name}
-                        </span>
-                        <span className="ml-2 inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                          {q.interview_round}
-                        </span>
-                        <span
-                          className={`ml-2 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${q.difficulty.toLowerCase() === 'hard'
-                            ? 'bg-rose-50 text-rose-700'
-                            : q.difficulty.toLowerCase() === 'medium'
-                              ? 'bg-amber-50 text-amber-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                            }`}
-                        >
-                          {q.difficulty}
+                    <div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-block rounded-md bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-800">
+                            {q.company_name}
+                          </span>
+                          <span className="inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                            {q.interview_round}
+                          </span>
+                          <span
+                            className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${q.difficulty.toLowerCase() === 'hard'
+                              ? 'bg-rose-50 text-rose-700'
+                              : q.difficulty.toLowerCase() === 'medium'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-emerald-50 text-emerald-700'
+                              }`}
+                          >
+                            {q.difficulty}
+                          </span>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          ✓ Verified Interview
                         </span>
                       </div>
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                        ✓ Verified Interview
-                      </span>
-                    </div>
 
-                    <h3 className="mt-3 text-base font-semibold leading-snug text-slate-900">
-                      {q.question_text}
-                    </h3>
+                      <h3 className="mt-3 text-base font-semibold leading-snug text-slate-900">
+                        {q.question_text}
+                      </h3>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      <span className="rounded bg-slate-100 px-2 py-1 font-medium">{q.category}</span>
-                      <span className="rounded bg-slate-100 px-2 py-1 text-slate-500">{q.job_role}</span>
-                      {q.skills_tested?.slice(0, 3).map((skill, idx) => (
-                        <span key={idx} className="rounded bg-slate-100 px-2 py-1 text-slate-500">
-                          #{skill}
-                        </span>
-                      ))}
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                        <span className="rounded bg-slate-100 px-2 py-1 font-medium">{q.category}</span>
+                        <span className="rounded bg-slate-100 px-2 py-1 text-slate-500">{q.job_role}</span>
+                        {q.skills_tested?.slice(0, 3).map((skill, idx) => (
+                          <span key={idx} className="rounded bg-slate-100 px-2 py-1 text-slate-500">
+                            #{skill}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-                      <button
-                        type="button"
-                        onClick={() => openCompanyQuestion(q)}
-                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-violet-700 hover:text-violet-800"
-                      >
-                        <span>Practice this question</span>
+                      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-violet-700">
+                        <span>Preview &amp; Practice</span>
                         <ArrowRight className="h-4 w-4" />
-                      </button>
+                      </span>
                       <span className="text-xs text-slate-400">Platform: {q.source_platform}</span>
                     </div>
                   </article>
-                ))
-              ) : (
-                <div className="rounded-xl border border-dashed bg-white p-10 text-center text-slate-600">
-                  <p className="font-semibold text-slate-800">No questions found</p>
-                  <p className="mt-1 text-sm">Try broadening your round or difficulty filters for {selectedCompany}.</p>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed bg-white p-10 text-center text-slate-600">
+                <p className="font-semibold text-slate-800">No questions found</p>
+                <p className="mt-1 text-sm">Try broadening your round or difficulty filters for {selectedCompany}.</p>
+              </div>
+            )}
+          </div>
 
-            {/* Interactive Practice Side Pane */}
-            <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
-              {selectedCompanyQ ? (
-                <>
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <span className="rounded-md bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-800">
-                        {selectedCompanyQ.company_name}
-                      </span>
-                      <span className="ml-2 text-xs font-semibold text-slate-500">{selectedCompanyQ.interview_round}</span>
-                    </div>
+          {/* Question Preview & Practice Modal */}
+          {selectedCompanyQ && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs"
+              onClick={() => setSelectedCompanyQ(null)}
+            >
+              <aside
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-800">
+                      {selectedCompanyQ.company_name}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">{selectedCompanyQ.interview_round}</span>
                     <span className="text-xs font-semibold uppercase text-violet-700">{selectedCompanyQ.difficulty}</span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCompanyQ(null)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    aria-label="Close preview"
+                  >
+                    ✕
+                  </button>
+                </div>
 
                   <h2 className="mt-3 text-lg font-bold text-slate-900">Practice Interview Problem</h2>
                   <p className="mt-2 text-sm leading-6 text-slate-700">{selectedCompanyQ.question_text}</p>
@@ -1497,17 +1510,9 @@ export function QuestionBankPage() {
                       </button>
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="py-12 text-center">
-                  <h3 className="font-semibold text-slate-900">Select an Interview Question</h3>
-                  <p className="mt-2 text-sm text-slate-500">
-                    Click "Practice this question" on any {selectedCompany} problem to submit your solution and receive instant rubric feedback.
-                  </p>
-                </div>
-              )}
-            </aside>
-          </div>
+              </aside>
+            </div>
+          )}
             </>
           )}
         </div>

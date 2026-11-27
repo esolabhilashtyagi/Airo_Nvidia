@@ -3,8 +3,12 @@
 @tailwind utilities;
 
 @layer base {
+  html,
   body {
-    @apply bg-[#faf9ff] text-slate-900 antialiased font-sans selection:bg-violet-500 selection:text-white;
+    font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif;
+  }
+  body {
+    @apply bg-[#faf9ff] text-slate-900 antialiased selection:bg-violet-500 selection:text-white;
   }
 }
 
