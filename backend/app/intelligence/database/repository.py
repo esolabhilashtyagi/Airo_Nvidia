@@ -647,7 +647,16 @@ class DynamicInterviewEngine:
         # Round 3: Production Implementation / In-Depth Workshop
         # -------------------------------------------------------------------------
         elif r_num == 3:
-            if is_startup:
+            if attr.get("is_ai_ml"):
+                q_texts = [
+                    f"Implement a production-grade continuous batching inference server in {primary_skill} for {company_name} with dynamic token-budget scheduling, KV-cache eviction, and graceful backpressure.",
+                    f"Build an asynchronous RAG document ingestion and semantic chunking pipeline for {company_name} (handling PDF/HTML parsing, deduplication, embedding batching, and incremental vector upserts).",
+                    f"Diagnose and eliminate GPU memory leaks and CUDA OOM spikes in a long-running {primary_skill} inference service under variable sequence-length traffic.",
+                    f"Implement activation checkpointing and BF16 mixed-precision gradient scaling in {primary_skill} to fit a large Transformer model within strict GPU VRAM budgets.",
+                    f"Design a fault-tolerant distributed training checkpointing and elastic worker recovery workflow using {skills_str} so multi-node runs resume without losing progress.",
+                    f"Implement a low-latency semantic cache and fallback model router for {company_name}'s LLM endpoints to cut inference cost and P99 latency without degrading answer quality.",
+                ]
+            elif is_startup:
                 q_texts = [
                     f"[{company_name} 0-to-1 Feature Implementation]: Given candidate background for {role} ({yoe_tier}), explain how you would rapidly architect, build, and deploy an end-to-end production feature using {skills_str} within 48 hours for {company_name}. Detail your choice of data models, error handling, and trade-offs between speed and perfection.",
                     f"[{company_name} Incident Triage & Zero-Downtime Migration]: Walk through how you would diagnose an intermittent 502 Bad Gateway outage in production or execute a zero-downtime database schema migration using {skills_str} while active customers are transacting.",

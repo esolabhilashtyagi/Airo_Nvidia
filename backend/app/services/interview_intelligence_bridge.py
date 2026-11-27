@@ -148,6 +148,18 @@ class InterviewIntelligenceBridge:
             "LOWER(question_text) NOT LIKE '%issue at training%'",
             "LOWER(question_text) NOT LIKE '%loss is decreasing%'",
             "LOWER(question_text) NOT LIKE '%how to load %'",
+            "LOWER(question_text) NOT LIKE '%install cuda%'",
+            "LOWER(question_text) NOT LIKE '%windows 10%'",
+            "LOWER(question_text) NOT LIKE '%on windows%'",
+            "LOWER(question_text) NOT LIKE '%not able to identify%'",
+            "LOWER(question_text) NOT LIKE '%my tensorflow%'",
+            "LOWER(question_text) NOT LIKE '%pregnancy%'",
+            "LOWER(question_text) NOT LIKE '%the price is that%'",
+            "LOWER(question_text) NOT LIKE '%sigterm signal handling in pytorch%'",
+            "LOWER(question_text) NOT LIKE '%weighted average cost of capital%'",
+            "LOWER(question_text) NOT LIKE '%monolithic kernel%'",
+            "LOWER(question_text) NOT LIKE '%process and program and thread%'",
+            "LOWER(question_text) NOT LIKE '%in pytorch, cuda, transformers%'",
         ]
         params: List[Any] = []
 
