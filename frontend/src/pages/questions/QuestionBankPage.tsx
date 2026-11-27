@@ -1102,15 +1102,6 @@ export function QuestionBankPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void handleGenerateNemotron()}
-                      disabled={generatingNemotron}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>{generatingNemotron ? 'Synthesizing...' : 'Nemotron Dorks'}</span>
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => exportCleanCsv()}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                     >
