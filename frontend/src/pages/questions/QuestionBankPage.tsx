@@ -1041,26 +1041,6 @@ export function QuestionBankPage() {
                       <option value={150}>150 questions (Exhaustive)</option>
                     </select>
                   </label>
-
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-700">
-                    {['LeetCode', 'GeeksforGeeks', 'Reddit', 'Open Web'].map((plat) => {
-                      const isSelected = scrapePlatforms.includes(plat);
-                      return (
-                        <button
-                          key={plat}
-                          type="button"
-                          onClick={() => togglePlatform(plat)}
-                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition ${
-                            isSelected
-                              ? 'bg-violet-600 text-white shadow-xs'
-                              : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          {plat}
-                        </button>
-                      );
-                    })}
-                  </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-1">
