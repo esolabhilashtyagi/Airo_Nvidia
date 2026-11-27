@@ -131,6 +131,7 @@ export function QuestionBankPage() {
   const [industryDropdownOpen, setIndustryDropdownOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [roleSearchInput, setRoleSearchInput] = useState('');
+  const [dynamicRounds, setDynamicRounds] = useState<{ id: string; label: string }[]>(CANONICAL_ROUNDS);
 
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
   const isStartupOrUnindexed =
@@ -381,6 +382,31 @@ export function QuestionBankPage() {
       mounted = false;
     };
   }, [selectedCompany]);
+
+  // Dynamically update Rounds dropdown when Company, Role, or YoE changes
+  useEffect(() => {
+    let mounted = true;
+    async function refreshDynamicRounds() {
+      try {
+        const bp = await companyIntelApi.getBlueprint(selectedCompany, effectiveRole, targetYoE);
+        if (mounted && bp?.rounds?.length) {
+          setDynamicRounds([
+            { id: '', label: 'All Rounds' },
+            ...bp.rounds.map((r: any) => ({
+              id: String(r.number),
+              label: r.name?.startsWith('Round ') ? r.name : `Round ${r.number}: ${r.name}`,
+            })),
+          ]);
+        }
+      } catch {
+        if (mounted) setDynamicRounds(CANONICAL_ROUNDS);
+      }
+    }
+    void refreshDynamicRounds();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedCompany, effectiveRole, targetYoE]);
 
   useEffect(() => {
     if (activeTab === 'standard') {
@@ -1145,30 +1171,9 @@ export function QuestionBankPage() {
             )}
           </div>
 
-          {/* Canonical 5-Round Filter Pills */}
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-            <span className="mr-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Rounds:</span>
-            {CANONICAL_ROUNDS.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => {
-                  setSelectedRound(r.id);
-                  setCompanyPage(1);
-                }}
-                className={`rounded-full px-3.5 py-1 text-xs font-medium transition ${selectedRound === r.id
-                    ? 'bg-violet-100 font-semibold text-violet-800 ring-2 ring-violet-600'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Search & Topic Filters */}
+          {/* Search, Rounds & Topic Filters */}
           <form
-            className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4 shadow-sm"
+            className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 shadow-sm"
             onSubmit={(e) => {
               e.preventDefault();
               setCompanySearch(companySearchInput);
@@ -1184,6 +1189,18 @@ export function QuestionBankPage() {
                 className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm focus:border-violet-500 focus:outline-none"
               />
             </label>
+            <select
+              value={selectedRound}
+              onChange={(e) => {
+                setSelectedRound(e.target.value);
+                setCompanyPage(1);
+              }}
+              className="rounded-lg border px-3 py-2 text-sm"
+            >
+              {dynamicRounds.map((r) => (
+                <option key={r.id || 'all'} value={r.id}>{r.label}</option>
+              ))}
+            </select>
             <select
               value={companyCategory}
               onChange={(e) => {
