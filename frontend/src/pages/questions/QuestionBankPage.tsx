@@ -119,7 +119,7 @@ export function QuestionBankPage() {
   const [customRoleInput, setCustomRoleInput] = useState<string>('');
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
-  const [customCompanyInput, setCustomCompanyInput] = useState<string>('');
+  const [customCompanyInput, setCustomCompanyInput] = useState<string>('Google');
   const [selectedIndustry, setSelectedIndustry] = useState<string>('');
   const [industrySearchInput, setIndustrySearchInput] = useState<string>('');
   const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
@@ -138,10 +138,12 @@ export function QuestionBankPage() {
     entityMode === 'startup' ||
     selectedCompany.toLowerCase() === 'startup' ||
     (companies.length > 0 && !companies.some((c) => c.name.toLowerCase() === selectedCompany.toLowerCase()));
-  const filteredCompanies = customCompanyInput.trim()
+  const isCompanyExactMatch = customCompanyInput.trim().toLowerCase() === selectedCompany.toLowerCase();
+  const filteredCompanies = customCompanyInput.trim() && !isCompanyExactMatch
     ? companies.filter((c) => c.name.toLowerCase().includes(customCompanyInput.trim().toLowerCase()))
     : companies;
-  const filteredIndustries = industrySearchInput.trim()
+  const isIndustryExactMatch = industrySearchInput.trim().toLowerCase() === selectedIndustry.toLowerCase();
+  const filteredIndustries = industrySearchInput.trim() && !isIndustryExactMatch
     ? availableIndustries.filter((ind) => ind.toLowerCase().includes(industrySearchInput.trim().toLowerCase()))
     : availableIndustries;
 
@@ -763,7 +765,7 @@ export function QuestionBankPage() {
                                   e.preventDefault();
                                   setSelectedCompany(c.name);
                                   setSelectedIndustry('');
-                                  setCustomCompanyInput('');
+                                  setCustomCompanyInput(c.name);
                                   setCompanyPage(1);
                                   setCompanyDropdownOpen(false);
                                 }}
@@ -874,8 +876,10 @@ export function QuestionBankPage() {
                       if (entityMode === 'company' && customCompanyInput.trim()) {
                         setSelectedCompany(customCompanyInput.trim());
                         setSelectedIndustry('');
-                        setCustomCompanyInput('');
                         setCompanyPage(1);
+                      }
+                      if (!roleSearchInput.trim() && effectiveRole) {
+                        setRoleSearchInput(effectiveRole);
                       }
                       setFlowStep(2);
                     }}
@@ -913,7 +917,12 @@ export function QuestionBankPage() {
                     {roleDropdownOpen && (
                       <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
                         {availableRoles
-                          .filter((r) => !roleSearchInput.trim() || r.toLowerCase().includes(roleSearchInput.trim().toLowerCase()))
+                          .filter(
+                            (r) =>
+                              !roleSearchInput.trim() ||
+                              roleSearchInput.trim().toLowerCase() === effectiveRole.toLowerCase() ||
+                              r.toLowerCase().includes(roleSearchInput.trim().toLowerCase())
+                          )
                           .map((r) => (
                             <button
                               key={r}
@@ -921,7 +930,7 @@ export function QuestionBankPage() {
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 handleRoleChange(r);
-                                setRoleSearchInput('');
+                                setRoleSearchInput(r);
                                 setRoleDropdownOpen(false);
                               }}
                               className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${targetRole === r
@@ -933,15 +942,17 @@ export function QuestionBankPage() {
                             </button>
                           ))}
 
-                        {roleSearchInput.trim() && (
+                        {roleSearchInput.trim() &&
+                          !availableRoles.some((r) => r.toLowerCase() === roleSearchInput.trim().toLowerCase()) && (
                           <button
                             type="button"
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              setCustomRoleInput(roleSearchInput.trim());
+                              const typed = roleSearchInput.trim();
+                              setCustomRoleInput(typed);
                               setTargetRole('custom');
                               handleRoleChange('custom');
-                              setRoleSearchInput('');
+                              setRoleSearchInput(typed);
                               setRoleDropdownOpen(false);
                             }}
                             className="flex w-full items-center px-3 py-2 text-left text-xs font-semibold text-indigo-800 bg-indigo-50/70 hover:bg-indigo-100"
