@@ -1399,7 +1399,7 @@ export function QuestionBankPage() {
             </div>
 
             {/* Interactive Practice Side Pane */}
-            <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6">
+            <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
               {selectedCompanyQ ? (
                 <>
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
