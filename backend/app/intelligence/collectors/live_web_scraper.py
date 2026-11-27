@@ -361,6 +361,7 @@ class LiveWebScraper:
         diff_target = difficulty.strip() if difficulty and difficulty.strip().lower() not in ["all", "all difficulties", "any", ""] else None
         platforms_target = platforms if platforms else ["LeetCode", "GeeksforGeeks", "Reddit", "Open Web"]
         limit_target = limit or 30
+        scrape_scale = max(1, (limit_target + 29) // 30)
 
         cursor_page = workflow_state.get_cursor_page(comp_target, role_target)
         logger.info(
@@ -382,7 +383,7 @@ class LiveWebScraper:
                     company=comp_target,
                     role=role_target,
                     page=cursor_page,
-                    max_articles=4,
+                    max_articles=min(15, 4 * scrape_scale),
                     yoe=yoe_target,
                     skills=skills_target,
                     round_number=round_target,
@@ -412,7 +413,7 @@ class LiveWebScraper:
             nonlocal scraped_sources_count
             try:
                 lc = LeetCodeCollector()
-                lc_items = await lc.collect(limit=6)
+                lc_items = await lc.collect(limit=min(30, 6 * scrape_scale))
                 scraped_sources_count += min(len(lc_items), 3)
                 for item in lc_items:
                     for eq in self._extract_questions_from_text(item.get("raw_text", ""), default_company=comp_target):
@@ -441,7 +442,7 @@ class LiveWebScraper:
             nonlocal scraped_sources_count
             try:
                 gfg = GFGCollector()
-                gfg_items = await gfg.collect(limit=6)
+                gfg_items = await gfg.collect(limit=min(30, 6 * scrape_scale))
                 scraped_sources_count += min(len(gfg_items), 3)
                 for item in gfg_items:
                     for eq in self._extract_questions_from_text(item.get("raw_text", ""), default_company=comp_target):
@@ -470,7 +471,7 @@ class LiveWebScraper:
             nonlocal scraped_sources_count
             try:
                 rc = RedditCollector()
-                rc_items = await rc.collect(limit=6)
+                rc_items = await rc.collect(limit=min(30, 6 * scrape_scale))
                 scraped_sources_count += min(len(rc_items), 3)
                 for item in rc_items:
                     for eq in self._extract_questions_from_text(item.get("raw_text", ""), default_company=comp_target):
@@ -523,7 +524,7 @@ class LiveWebScraper:
                             "sort": "votes",
                             "q": query_str,
                             "site": site,
-                            "pagesize": 15,
+                            "pagesize": min(50, 15 * scrape_scale),
                             "filter": "withbody",
                         },
                     )
@@ -573,17 +574,17 @@ class LiveWebScraper:
                 async with httpx.AsyncClient(timeout=6.0, headers=self.headers) as client:
                     resp = await client.get(
                         "https://dev.to/api/articles",
-                        params={"tag": "interview", "per_page": 6, "top": 60},
+                        params={"tag": "interview", "per_page": min(20, 6 * scrape_scale), "top": 60},
                     )
                     articles_meta = resp.json() if resp.status_code == 200 else []
                     if tag != "interview":
                         resp2 = await client.get(
                             "https://dev.to/api/articles",
-                            params={"tag": tag, "per_page": 4, "top": 60},
+                            params={"tag": tag, "per_page": min(12, 4 * scrape_scale), "top": 60},
                         )
                         if resp2.status_code == 200:
                             articles_meta = (articles_meta or []) + (resp2.json() or [])
-                    for art_meta in (articles_meta or [])[:4]:
+                    for art_meta in (articles_meta or [])[:min(12, 4 * scrape_scale)]:
                         art_id = art_meta.get("id")
                         art_url = art_meta.get("url", "https://dev.to")
                         if not art_id:
@@ -595,7 +596,7 @@ class LiveWebScraper:
                         if body_md:
                             scraped_sources_count += 1
                             extracted = self._extract_questions_from_text(body_md, default_company=comp_target)
-                            for eq in extracted[:8]:
+                            for eq in extracted[:min(25, 8 * scrape_scale)]:
                                 q_hash = get_dedup_hash(eq["question_text"])
                                 if q_hash not in seen_hashes:
                                     seen_hashes.add(q_hash)
@@ -624,12 +625,12 @@ class LiveWebScraper:
                 async with httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "AAIRO-Intel/1.0"}) as client:
                     resp = await client.get(
                         "https://api.github.com/search/repositories",
-                        params={"q": search_q, "sort": "stars", "per_page": 3},
+                        params={"q": search_q, "sort": "stars", "per_page": min(8, 3 * scrape_scale)},
                     )
                     if resp.status_code != 200:
                         return
                     repos = resp.json().get("items", [])
-                    for repo in repos[:2]:
+                    for repo in repos[:min(6, 2 * scrape_scale)]:
                         full_name = repo.get("full_name")
                         branch = repo.get("default_branch", "main")
                         html_url = repo.get("html_url", "https://github.com")
@@ -640,8 +641,8 @@ class LiveWebScraper:
                         if raw_resp.status_code != 200:
                             continue
                         scraped_sources_count += 1
-                        extracted = self._extract_questions_from_text(raw_resp.text[:60000], default_company=comp_target)
-                        for eq in extracted[:15]:
+                        extracted = self._extract_questions_from_text(raw_resp.text[:120000], default_company=comp_target)
+                        for eq in extracted[:min(45, 15 * scrape_scale)]:
                             q_hash = get_dedup_hash(eq["question_text"])
                             if q_hash not in seen_hashes:
                                 seen_hashes.add(q_hash)
@@ -684,7 +685,10 @@ class LiveWebScraper:
 
         if net_tasks:
             try:
-                await asyncio.wait_for(asyncio.gather(*net_tasks, return_exceptions=True), timeout=8.0)
+                await asyncio.wait_for(
+                    asyncio.gather(*net_tasks, return_exceptions=True),
+                    timeout=14.0 if limit_target >= 100 else 8.0,
+                )
             except Exception:
                 pass
 

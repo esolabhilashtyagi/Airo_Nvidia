@@ -234,7 +234,7 @@ export function QuestionBankPage() {
         platforms: scrapePlatforms,
         keyword: companySearchInput || '',
         limit: scrapeLimit,
-        max_pages: 3,
+        max_pages: scrapeLimit >= 100 ? 6 : 3,
       });
       const countStored = res.stored_in_database ?? 0;
       const countExtracted = res.extracted_questions_count ?? 0;
@@ -315,7 +315,7 @@ export function QuestionBankPage() {
         difficulty: companyDifficulty || undefined,
         search: companySearch || undefined,
         page: companyPage,
-        limit: 100,
+        limit: Math.max(100, scrapeLimit),
       };
       const response = await companyIntelApi.listQuestions(params);
       setCompanyQuestions(response ?? []);
