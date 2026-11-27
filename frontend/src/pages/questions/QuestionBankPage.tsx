@@ -743,16 +743,13 @@ export function QuestionBankPage() {
                                   setCompanyPage(1);
                                   setCompanyDropdownOpen(false);
                                 }}
-                                className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition ${
+                                className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${
                                   selectedCompany.toLowerCase() === c.name.toLowerCase()
                                     ? 'bg-violet-50 font-semibold text-violet-800'
                                     : 'text-slate-700 hover:bg-slate-50'
                                 }`}
                               >
                                 <span>{c.name}</span>
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                  {c.question_count}
-                                </span>
                               </button>
                             ))}
 
