@@ -962,28 +962,24 @@ export function QuestionBankPage() {
                   <p className="text-xs text-slate-500">Choose your experience level or enter exact years.</p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {[
-                    { label: 'Intern (0y)', val: 0.0 },
-                    { label: 'Entry (1.5y)', val: 1.5 },
-                    { label: 'Mid (3.5y)', val: 3.5 },
-                    { label: 'Senior (6y)', val: 6.0 },
-                    { label: 'Staff (9y+)', val: 9.0 },
-                  ].map((tier) => (
-                    <button
-                      key={tier.label}
-                      type="button"
-                      onClick={() => setTargetYoE(tier.val)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                        targetYoE === tier.val
-                          ? 'bg-violet-700 text-white shadow-xs'
-                          : 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      {tier.label}
-                    </button>
-                  ))}
-                  <div className="flex items-center gap-1.5 ml-1">
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <select
+                    value={[0, 1.5, 3.5, 6, 9].includes(targetYoE) ? String(targetYoE) : 'custom'}
+                    onChange={(e) => {
+                      if (e.target.value !== 'custom') {
+                        setTargetYoE(parseFloat(e.target.value));
+                      }
+                    }}
+                    className="flex-1 min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  >
+                    <option value="0">Intern (0 years)</option>
+                    <option value="1.5">Entry Level (1.5 years)</option>
+                    <option value="3.5">Mid Level (3.5 years)</option>
+                    <option value="6">Senior (6 years)</option>
+                    <option value="9">Staff / Principal (9+ years)</option>
+                    <option value="custom">Custom Years</option>
+                  </select>
+                  <div className="flex items-center gap-1.5">
                     <input
                       type="number"
                       step="0.5"
@@ -991,9 +987,9 @@ export function QuestionBankPage() {
                       max="30"
                       value={targetYoE}
                       onChange={(e) => setTargetYoE(parseFloat(e.target.value) || 0)}
-                      className="w-16 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 text-center"
+                      className="w-20 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 text-center focus:border-violet-600 focus:outline-none"
                     />
-                    <span className="text-slate-500 text-xs">yrs</span>
+                    <span className="text-slate-500 text-xs font-medium">yrs</span>
                   </div>
                 </div>
 
