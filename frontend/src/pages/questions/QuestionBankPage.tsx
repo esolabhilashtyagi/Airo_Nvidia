@@ -113,7 +113,7 @@ export function QuestionBankPage() {
   const [generatingNemotron, setGeneratingNemotron] = useState(false);
   const [scrapingLive, setScrapingLive] = useState(false);
   const [scrapeSuccessMsg, setScrapeSuccessMsg] = useState('');
-  const [targetYoE, setTargetYoE] = useState<number>(3.5);
+  const [targetYoE, setTargetYoE] = useState<number | null>(null);
   const [targetSkills, setTargetSkills] = useState<string>('');
   const [targetRole, setTargetRole] = useState<string>('');
   const [customRoleInput, setCustomRoleInput] = useState<string>('');
@@ -200,13 +200,13 @@ export function QuestionBankPage() {
         companyIntelApi.generateDorks({
           company: selectedCompany,
           role: effectiveRole,
-          yoe: targetYoE,
+          yoe: targetYoE ?? 3.5,
           skills: skillsArr,
         }),
         companyIntelApi.synthesizeRoundQuestions({
           company: selectedCompany,
           role: effectiveRole,
-          yoe: targetYoE,
+          yoe: targetYoE ?? 3.5,
           skills: skillsArr,
           round_number: selectedRound ? parseInt(selectedRound, 10) : undefined,
         }),
@@ -230,7 +230,7 @@ export function QuestionBankPage() {
         company: selectedCompany,
         industry: isStartupOrUnindexed && selectedIndustry ? selectedIndustry : undefined,
         role: effectiveRole,
-        yoe: targetYoE,
+        yoe: targetYoE ?? 3.5,
         skills: skillsArr,
         round_number: selectedRound ? parseInt(selectedRound, 10) : undefined,
         difficulty: companyDifficulty || undefined,
@@ -394,7 +394,7 @@ export function QuestionBankPage() {
     let mounted = true;
     async function refreshDynamicRounds() {
       try {
-        const bp = await companyIntelApi.getBlueprint(selectedCompany, effectiveRole, targetYoE);
+        const bp = await companyIntelApi.getBlueprint(selectedCompany, effectiveRole, targetYoE ?? 3.5);
         if (mounted && bp?.rounds?.length) {
           setDynamicRounds([
             { id: '', label: 'All Rounds' },
@@ -676,7 +676,7 @@ export function QuestionBankPage() {
                     {effectiveRole}
                   </span>
                 )}
-                {flowStep >= 3 && (
+                {flowStep >= 3 && targetYoE !== null && (
                   <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-700 border border-slate-200">
                     {targetYoE}y
                   </span>
@@ -1000,14 +1000,17 @@ export function QuestionBankPage() {
 
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                   <select
-                    value={[0, 1.5, 3.5, 6, 9].includes(targetYoE) ? String(targetYoE) : 'custom'}
+                    value={targetYoE === null ? '' : ([0, 1.5, 3.5, 6, 9].includes(targetYoE) ? String(targetYoE) : 'custom')}
                     onChange={(e) => {
-                      if (e.target.value !== 'custom') {
+                      if (e.target.value === '') {
+                        setTargetYoE(null);
+                      } else if (e.target.value !== 'custom') {
                         setTargetYoE(parseFloat(e.target.value));
                       }
                     }}
                     className="flex-1 min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
                   >
+                    <option value="">Select experience level...</option>
                     <option value="0">Intern (0 years)</option>
                     <option value="1.5">Entry Level (1.5 years)</option>
                     <option value="3.5">Mid Level (3.5 years)</option>
@@ -1021,8 +1024,9 @@ export function QuestionBankPage() {
                       step="0.5"
                       min="0"
                       max="30"
-                      value={targetYoE}
-                      onChange={(e) => setTargetYoE(parseFloat(e.target.value) || 0)}
+                      value={targetYoE ?? ''}
+                      placeholder="0"
+                      onChange={(e) => setTargetYoE(e.target.value === '' ? null : (parseFloat(e.target.value) || 0))}
                       className="w-20 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-800 text-center focus:border-violet-600 focus:outline-none"
                     />
                     <span className="text-slate-500 text-xs font-medium">yrs</span>
