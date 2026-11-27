@@ -127,6 +127,8 @@ export function QuestionBankPage() {
 
   const [entityMode, setEntityMode] = useState<'company' | 'startup'>('company');
   const [flowStep, setFlowStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
+  const [industryDropdownOpen, setIndustryDropdownOpen] = useState(false);
 
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
   const isStartupOrUnindexed =
@@ -698,7 +700,7 @@ export function QuestionBankPage() {
                 </div>
 
                 {entityMode === 'company' ? (
-                  <div className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="relative space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -708,17 +710,87 @@ export function QuestionBankPage() {
                           setCompanyPage(1);
                           setCustomCompanyInput('');
                         }
+                        setCompanyDropdownOpen(false);
                         setFlowStep(2);
                       }}
                       className="flex items-center gap-2"
                     >
-                      <Search className="h-4 w-4 text-slate-400 shrink-0" />
-                      <input
-                        value={customCompanyInput}
-                        onChange={(e) => setCustomCompanyInput(e.target.value)}
-                        placeholder="Type company name for suggestions (e.g. Google, Stripe, Adobe)..."
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 flex-1"
-                      />
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                          value={customCompanyInput}
+                          onFocus={() => setCompanyDropdownOpen(true)}
+                          onBlur={() => setTimeout(() => setCompanyDropdownOpen(false), 150)}
+                          onChange={(e) => {
+                            setCustomCompanyInput(e.target.value);
+                            setCompanyDropdownOpen(true);
+                          }}
+                          placeholder={`Selected: ${selectedCompany} — Type or click to pick company...`}
+                          className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
+                        />
+
+                        {companyDropdownOpen && (
+                          <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                            {filteredCompanies.map((c) => (
+                              <button
+                                key={c.name}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setSelectedCompany(c.name);
+                                  setSelectedIndustry('');
+                                  setCustomCompanyInput('');
+                                  setCompanyPage(1);
+                                  setCompanyDropdownOpen(false);
+                                }}
+                                className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition ${
+                                  selectedCompany.toLowerCase() === c.name.toLowerCase()
+                                    ? 'bg-violet-50 font-semibold text-violet-800'
+                                    : 'text-slate-700 hover:bg-slate-50'
+                                }`}
+                              >
+                                <span>{c.name}</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                                  {c.question_count}
+                                </span>
+                              </button>
+                            ))}
+
+                            {customCompanyInput.trim() && filteredCompanies.length === 0 && (
+                              <div className="p-1.5 space-y-1">
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setSelectedCompany(customCompanyInput.trim());
+                                    setSelectedIndustry('');
+                                    setCustomCompanyInput('');
+                                    setCompanyPage(1);
+                                    setCompanyDropdownOpen(false);
+                                  }}
+                                  className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                                >
+                                  <span>Use "{customCompanyInput.trim()}"</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setEntityMode('startup');
+                                    setSelectedCompany('Startup');
+                                    setCompanyPage(1);
+                                    setCompanyDropdownOpen(false);
+                                    setIndustryDropdownOpen(true);
+                                  }}
+                                  className="flex w-full items-center justify-between rounded-md bg-emerald-50 px-2.5 py-2 text-left text-xs font-semibold text-emerald-900 hover:bg-emerald-100"
+                                >
+                                  <span>"{customCompanyInput.trim()}" not indexed — Switch to Startup & pick Industry</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       {customCompanyInput.trim() && (
                         <button
                           type="submit"
@@ -728,85 +800,51 @@ export function QuestionBankPage() {
                         </button>
                       )}
                     </form>
-
-                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
-                      {filteredCompanies.map((c) => (
-                        <button
-                          key={c.name}
-                          type="button"
-                          onClick={() => {
-                            setSelectedCompany(c.name);
-                            setSelectedIndustry('');
-                            setCompanyPage(1);
-                          }}
-                          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                            selectedCompany.toLowerCase() === c.name.toLowerCase()
-                              ? 'bg-violet-700 text-white shadow-sm ring-1 ring-violet-700'
-                              : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{c.name}</span>
-                          <span
-                            className={`text-[10px] rounded-full px-1.5 py-0.2 ${
-                              selectedCompany.toLowerCase() === c.name.toLowerCase()
-                                ? 'bg-violet-800 text-violet-100'
-                                : 'bg-slate-200 text-slate-600'
-                            }`}
-                          >
-                            {c.question_count}
-                          </span>
-                        </button>
-                      ))}
-                      {customCompanyInput.trim() && filteredCompanies.length === 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEntityMode('startup');
-                            setSelectedCompany('Startup');
-                            setCompanyPage(1);
-                          }}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 hover:bg-emerald-100"
-                        >
-                          <span>"{customCompanyInput.trim()}" not indexed — Switch to Startup & pick Industry</span>
-                        </button>
-                      )}
-                    </div>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-2.5">
+                  <div className="relative rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
                     <span className="block text-xs font-bold text-emerald-900">
-                      Startup Industry Suggestions {selectedIndustry ? `· Selected: ${selectedIndustry}` : '(Type or pick an industry)'}
+                      Startup Industry {selectedIndustry ? `· Selected: ${selectedIndustry}` : '(Click or type to see suggestions)'}
                     </span>
-                    <input
-                      value={industrySearchInput}
-                      onChange={(e) => {
-                        setIndustrySearchInput(e.target.value);
-                        if (e.target.value.trim()) setSelectedIndustry(e.target.value.trim());
-                      }}
-                      placeholder="Search or type industry (e.g. Fintech, AI/GenAI, SaaS, Healthcare, E-Commerce)..."
-                      className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs text-slate-800 focus:border-emerald-600 focus:outline-none"
-                    />
-                    {filteredIndustries.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {filteredIndustries.map((ind) => (
-                          <button
-                            key={ind}
-                            type="button"
-                            onClick={() => {
-                              setSelectedIndustry(ind);
-                              setIndustrySearchInput(ind);
-                            }}
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                              selectedIndustry.toLowerCase() === ind.toLowerCase()
-                                ? 'bg-emerald-700 text-white'
-                                : 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100'
-                            }`}
-                          >
-                            {ind}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-emerald-500" />
+                      <input
+                        value={industrySearchInput}
+                        onFocus={() => setIndustryDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setIndustryDropdownOpen(false), 150)}
+                        onChange={(e) => {
+                          setIndustrySearchInput(e.target.value);
+                          setIndustryDropdownOpen(true);
+                          if (e.target.value.trim()) setSelectedIndustry(e.target.value.trim());
+                        }}
+                        placeholder="Search or pick industry (e.g. Fintech, AI/GenAI, SaaS, Healthcare)..."
+                        className="w-full rounded-lg border border-emerald-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 focus:border-emerald-600 focus:outline-none"
+                      />
+
+                      {industryDropdownOpen && filteredIndustries.length > 0 && (
+                        <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-emerald-200 bg-white py-1 shadow-lg">
+                          {filteredIndustries.map((ind) => (
+                            <button
+                              key={ind}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setSelectedIndustry(ind);
+                                setIndustrySearchInput(ind);
+                                setIndustryDropdownOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition ${
+                                selectedIndustry.toLowerCase() === ind.toLowerCase()
+                                  ? 'bg-emerald-50 font-semibold text-emerald-800'
+                                  : 'text-slate-700 hover:bg-emerald-50/60'
+                              }`}
+                            >
+                              <span>{ind}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
