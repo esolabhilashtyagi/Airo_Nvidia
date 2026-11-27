@@ -554,8 +554,8 @@ export function QuestionBankPage() {
           type="button"
           onClick={() => setActiveTab('company')}
           className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${activeTab === 'company'
-              ? 'border-violet-700 text-violet-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+            ? 'border-violet-700 text-violet-800'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
         >
           🏢 Authentic Company Interview Intel (FAANG & Tech)
@@ -565,8 +565,8 @@ export function QuestionBankPage() {
           type="button"
           onClick={() => setActiveTab('standard')}
           className={`relative border-b-2 px-6 py-3 text-sm font-semibold transition ${activeTab === 'standard'
-              ? 'border-violet-700 text-violet-800'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+            ? 'border-violet-700 text-violet-800'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
         >
           🎓 Standard Curriculum Practice Bank
@@ -632,22 +632,20 @@ export function QuestionBankPage() {
                       <button
                         type="button"
                         onClick={() => setFlowStep(item.step)}
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition ${
-                          isActive
-                            ? 'bg-violet-700 text-white shadow-xs'
-                            : isDone
-                              ? 'bg-violet-100 text-violet-800 hover:bg-violet-200'
-                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                        }`}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition ${isActive
+                          ? 'bg-violet-700 text-white shadow-xs'
+                          : isDone
+                            ? 'bg-violet-100 text-violet-800 hover:bg-violet-200'
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                          }`}
                       >
                         <span
-                          className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
-                            isActive
-                              ? 'bg-white text-violet-700'
-                              : isDone
-                                ? 'bg-violet-700 text-white'
-                                : 'bg-slate-300 text-slate-700'
-                          }`}
+                          className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${isActive
+                            ? 'bg-white text-violet-700'
+                            : isDone
+                              ? 'bg-violet-700 text-white'
+                              : 'bg-slate-300 text-slate-700'
+                            }`}
                         >
                           {isDone ? '✓' : item.step}
                         </span>
@@ -701,11 +699,10 @@ export function QuestionBankPage() {
                         setSelectedIndustry('');
                         setCompanyPage(1);
                       }}
-                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                        entityMode === 'company'
-                          ? 'bg-white text-violet-800 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${entityMode === 'company'
+                        ? 'bg-white text-violet-800 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                        }`}
                     >
                       Company
                     </button>
@@ -716,11 +713,10 @@ export function QuestionBankPage() {
                         setSelectedCompany('Startup');
                         setCompanyPage(1);
                       }}
-                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                        entityMode === 'startup'
-                          ? 'bg-emerald-700 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${entityMode === 'startup'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                        }`}
                     >
                       Startup
                     </button>
@@ -771,11 +767,10 @@ export function QuestionBankPage() {
                                   setCompanyPage(1);
                                   setCompanyDropdownOpen(false);
                                 }}
-                                className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${
-                                  selectedCompany.toLowerCase() === c.name.toLowerCase()
-                                    ? 'bg-violet-50 font-semibold text-violet-800'
-                                    : 'text-slate-700 hover:bg-slate-50'
-                                }`}
+                                className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${selectedCompany.toLowerCase() === c.name.toLowerCase()
+                                  ? 'bg-violet-50 font-semibold text-violet-800'
+                                  : 'text-slate-700 hover:bg-slate-50'
+                                  }`}
                               >
                                 <span>{c.name}</span>
                               </button>
@@ -858,11 +853,10 @@ export function QuestionBankPage() {
                                 setIndustrySearchInput(ind);
                                 setIndustryDropdownOpen(false);
                               }}
-                              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition ${
-                                selectedIndustry.toLowerCase() === ind.toLowerCase()
-                                  ? 'bg-emerald-50 font-semibold text-emerald-800'
-                                  : 'text-slate-700 hover:bg-emerald-50/60'
-                              }`}
+                              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition ${selectedIndustry.toLowerCase() === ind.toLowerCase()
+                                ? 'bg-emerald-50 font-semibold text-emerald-800'
+                                : 'text-slate-700 hover:bg-emerald-50/60'
+                                }`}
                             >
                               <span>{ind}</span>
                             </button>
@@ -930,11 +924,10 @@ export function QuestionBankPage() {
                                 setRoleSearchInput('');
                                 setRoleDropdownOpen(false);
                               }}
-                              className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${
-                                targetRole === r
-                                  ? 'bg-violet-50 font-semibold text-violet-800'
-                                  : 'text-slate-700 hover:bg-slate-50'
-                              }`}
+                              className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${targetRole === r
+                                ? 'bg-violet-50 font-semibold text-violet-800'
+                                : 'text-slate-700 hover:bg-slate-50'
+                                }`}
                             >
                               <span>{r}</span>
                             </button>
@@ -1171,7 +1164,9 @@ export function QuestionBankPage() {
             )}
           </div>
 
-          {/* Search, Rounds & Topic Filters */}
+          {flowStep === 5 && !scrapingLive && (
+            <>
+              {/* Search, Rounds & Topic Filters */}
           <form
             className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5 shadow-sm"
             onSubmit={(e) => {
@@ -1379,10 +1374,10 @@ export function QuestionBankPage() {
                         </span>
                         <span
                           className={`ml-2 inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${q.difficulty.toLowerCase() === 'hard'
-                              ? 'bg-rose-50 text-rose-700'
-                              : q.difficulty.toLowerCase() === 'medium'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-emerald-50 text-emerald-700'
+                            ? 'bg-rose-50 text-rose-700'
+                            : q.difficulty.toLowerCase() === 'medium'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-emerald-50 text-emerald-700'
                             }`}
                         >
                           {q.difficulty}
@@ -1517,6 +1512,8 @@ export function QuestionBankPage() {
               )}
             </aside>
           </div>
+            </>
+          )}
         </div>
       )}
 
