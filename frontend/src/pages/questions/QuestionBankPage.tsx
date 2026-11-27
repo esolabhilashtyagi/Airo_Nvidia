@@ -86,7 +86,7 @@ export function QuestionBankPage() {
   // Company Intelligence State
   const [companyQuestions, setCompanyQuestions] = useState<CompanyInterviewQuestion[]>([]);
   const [companies, setCompanies] = useState<CompanySummary[]>([]);
-  const [selectedCompany, setSelectedCompany] = useState<string>('Google');
+  const [selectedCompany, setSelectedCompany] = useState<string>('');
   const [selectedRound, setSelectedRound] = useState<string>('');
   const [companyCategory, setCompanyCategory] = useState<string>('');
   const [companyDifficulty, setCompanyDifficulty] = useState<string>('');
@@ -119,7 +119,7 @@ export function QuestionBankPage() {
   const [customRoleInput, setCustomRoleInput] = useState<string>('');
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
-  const [customCompanyInput, setCustomCompanyInput] = useState<string>('Google');
+  const [customCompanyInput, setCustomCompanyInput] = useState<string>('');
   const [selectedIndustry, setSelectedIndustry] = useState<string>('');
   const [industrySearchInput, setIndustrySearchInput] = useState<string>('');
   const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
@@ -308,6 +308,11 @@ export function QuestionBankPage() {
 
   // Load Company Questions
   const loadCompanyQuestions = useCallback(async () => {
+    if (!selectedCompany.trim()) {
+      setCompanyQuestions([]);
+      setCompanyTotal(0);
+      return;
+    }
     setCompanyLoading(true);
     try {
       const params: Record<string, any> = {
@@ -359,6 +364,7 @@ export function QuestionBankPage() {
 
   // Update roles and categories when selectedCompany changes
   useEffect(() => {
+    if (!selectedCompany.trim()) return;
     let mounted = true;
     async function updateCompanySpecificMeta() {
       try {
@@ -369,9 +375,6 @@ export function QuestionBankPage() {
         if (mounted) {
           if (roles?.length) {
             setAvailableRoles(roles);
-            if (targetRole !== 'custom' && !roles.includes(targetRole)) {
-              handleRoleChange(roles[0]);
-            }
           }
           if (cats?.length) setAvailableCategories(cats);
         }
@@ -387,6 +390,7 @@ export function QuestionBankPage() {
 
   // Dynamically update Rounds dropdown when Company, Role, or YoE changes
   useEffect(() => {
+    if (!selectedCompany.trim()) return;
     let mounted = true;
     async function refreshDynamicRounds() {
       try {
@@ -660,12 +664,14 @@ export function QuestionBankPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                <span className="rounded-md bg-violet-50 px-2 py-0.5 font-semibold text-violet-800 border border-violet-200">
-                  {entityMode === 'startup'
-                    ? `Startup${selectedIndustry ? ` · ${selectedIndustry}` : ''}`
-                    : selectedCompany}
-                </span>
-                {flowStep >= 2 && (
+                {(entityMode === 'startup' || selectedCompany) && (
+                  <span className="rounded-md bg-violet-50 px-2 py-0.5 font-semibold text-violet-800 border border-violet-200">
+                    {entityMode === 'startup'
+                      ? `Startup${selectedIndustry ? ` · ${selectedIndustry}` : ''}`
+                      : selectedCompany}
+                  </span>
+                )}
+                {flowStep >= 2 && effectiveRole && (
                   <span className="rounded-md bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-800 border border-indigo-200">
                     {effectiveRole}
                   </span>
@@ -751,7 +757,7 @@ export function QuestionBankPage() {
                             setCustomCompanyInput(e.target.value);
                             setCompanyDropdownOpen(true);
                           }}
-                          placeholder={`Selected: ${selectedCompany} — Type or click to pick company...`}
+                          placeholder="Type or click to pick company..."
                           className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600"
                         />
 
@@ -910,7 +916,7 @@ export function QuestionBankPage() {
                         setRoleSearchInput(e.target.value);
                         setRoleDropdownOpen(true);
                       }}
-                      placeholder={`Selected: ${effectiveRole} — Click or type to pick role...`}
+                      placeholder="Click or type to pick role..."
                       className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
                     />
 
