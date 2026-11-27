@@ -129,6 +129,8 @@ export function QuestionBankPage() {
   const [flowStep, setFlowStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [companyDropdownOpen, setCompanyDropdownOpen] = useState(false);
   const [industryDropdownOpen, setIndustryDropdownOpen] = useState(false);
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
+  const [roleSearchInput, setRoleSearchInput] = useState('');
 
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
   const isStartupOrUnindexed =
@@ -870,50 +872,68 @@ export function QuestionBankPage() {
               <div className="space-y-3">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Step 2: Select Target Role</h3>
-                  <p className="text-xs text-slate-500">Pick a suggested role or enter a custom role.</p>
+                  <p className="text-xs text-slate-500">Click or type to pick a role from the dropdown, or type any custom role.</p>
                 </div>
 
-                {availableRoles.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {availableRoles.map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => handleRoleChange(r)}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                          targetRole === r
-                            ? 'bg-violet-700 text-white shadow-xs'
-                            : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => handleRoleChange('custom')}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                        targetRole === 'custom'
-                          ? 'bg-indigo-700 text-white shadow-xs'
-                          : 'border border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
-                      }`}
-                    >
-                      + Custom Role
-                    </button>
-                  </div>
-                )}
+                <div className="relative rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      value={roleSearchInput}
+                      onFocus={() => setRoleDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setRoleDropdownOpen(false), 150)}
+                      onChange={(e) => {
+                        setRoleSearchInput(e.target.value);
+                        setRoleDropdownOpen(true);
+                      }}
+                      placeholder={`Selected: ${effectiveRole} — Click or type to pick role...`}
+                      className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-xs text-slate-800 placeholder-slate-400 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                    />
 
-                {(targetRole === 'custom' || availableRoles.length === 0) && (
-                  <input
-                    value={customRoleInput}
-                    onChange={(e) => {
-                      setCustomRoleInput(e.target.value);
-                      handleRoleChange('custom');
-                    }}
-                    placeholder="e.g. Senior Financial Analyst, Backend Engineer, Product Manager..."
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 focus:outline-none"
-                  />
-                )}
+                    {roleDropdownOpen && (
+                      <div className="absolute left-0 right-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                        {availableRoles
+                          .filter((r) => !roleSearchInput.trim() || r.toLowerCase().includes(roleSearchInput.trim().toLowerCase()))
+                          .map((r) => (
+                            <button
+                              key={r}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleRoleChange(r);
+                                setRoleSearchInput('');
+                                setRoleDropdownOpen(false);
+                              }}
+                              className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${
+                                targetRole === r
+                                  ? 'bg-violet-50 font-semibold text-violet-800'
+                                  : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>{r}</span>
+                            </button>
+                          ))}
+
+                        {roleSearchInput.trim() && (
+                          <button
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setCustomRoleInput(roleSearchInput.trim());
+                              setTargetRole('custom');
+                              handleRoleChange('custom');
+                              setRoleSearchInput('');
+                              setRoleDropdownOpen(false);
+                            }}
+                            className="flex w-full items-center px-3 py-2 text-left text-xs font-semibold text-indigo-800 bg-indigo-50/70 hover:bg-indigo-100"
+                          >
+                            <span>Use custom role: "{roleSearchInput.trim()}"</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 <div className="flex items-center justify-between pt-1">
                   <button
