@@ -88,8 +88,8 @@ export const Navbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick }) 
             aria-expanded={showUserMenu}
             className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100 transition-colors"
           >
-            <div className="w-8 h-8 rounded-full bg-violet-600 text-white font-semibold flex items-center justify-center text-xs shadow-sm">
-              {user?.full_name ? user.full_name[0].toUpperCase() : 'U'}
+            <div className="px-3 py-1.5 rounded-full bg-violet-600 text-white font-semibold flex items-center justify-center text-xs shadow-sm whitespace-nowrap">
+              {user?.full_name || 'User'}
             </div>
           </button>
 
