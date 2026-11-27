@@ -125,8 +125,11 @@ export function QuestionBankPage() {
   const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  const [entityMode, setEntityMode] = useState<'company' | 'startup'>('company');
+
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
   const isStartupOrUnindexed =
+    entityMode === 'startup' ||
     selectedCompany.toLowerCase() === 'startup' ||
     (companies.length > 0 && !companies.some((c) => c.name.toLowerCase() === selectedCompany.toLowerCase()));
   const filteredCompanies = customCompanyInput.trim()
@@ -136,7 +139,7 @@ export function QuestionBankPage() {
     ? availableIndustries.filter((ind) => ind.toLowerCase().includes(industrySearchInput.trim().toLowerCase()))
     : availableIndustries;
 
-  const [scrapeLimit, setScrapeLimit] = useState<number>(50);
+  const [scrapeLimit, setScrapeLimit] = useState<number>(100);
   const [scrapePlatforms, setScrapePlatforms] = useState<string[]>([
     'LeetCode',
     'GeeksforGeeks',
@@ -579,111 +582,152 @@ export function QuestionBankPage() {
       {/* ========================================================================= */}
       {activeTab === 'company' && (
         <div className="space-y-5">
-          {/* Dynamic Company Selection & Custom Search Bar */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Target Tech Company ({companies.length} Indexed)
-              </p>
-              <div className="flex items-center gap-1.5 text-xs">
+          {/* Step-by-Step Guided Question Bank Flow */}
+          <div className="rounded-xl border border-violet-200 bg-white p-5 shadow-sm space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-violet-700" />
+                <h2 className="text-sm font-bold text-slate-900">
+                  Guided Question Generator
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 <span className="text-slate-500">Active:</span>
                 <span className="rounded-md bg-violet-100 px-2 py-0.5 font-bold text-violet-800 border border-violet-200">
-                  {selectedCompany}
+                  {entityMode === 'startup' ? `Startup${selectedIndustry ? ` · ${selectedIndustry}` : ''}` : selectedCompany}
                 </span>
-                <span className="text-slate-500 ml-2">Role:</span>
+                <span className="text-slate-500 ml-1">Role:</span>
                 <span className="rounded-md bg-indigo-100 px-2 py-0.5 font-bold text-indigo-800 border border-indigo-200">
-                  {effectiveRole}
+                  {effectiveRole} ({targetYoE}y)
                 </span>
               </div>
             </div>
 
-            {/* Dynamic Company Badges + Startup Option */}
-            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCompany('Startup');
-                  setCompanyPage(1);
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                  selectedCompany.toLowerCase() === 'startup'
-                    ? 'bg-emerald-700 text-white shadow-sm ring-1 ring-emerald-700'
-                    : 'border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                }`}
-              >
-                <span>Startup (By Industry)</span>
-              </button>
-              {filteredCompanies.map((c) => (
-                <button
-                  key={c.name}
-                  type="button"
-                  onClick={() => {
-                    setSelectedCompany(c.name);
-                    setSelectedIndustry('');
-                    setCompanyPage(1);
-                  }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedCompany.toLowerCase() === c.name.toLowerCase()
-                      ? 'bg-violet-700 text-white shadow-sm ring-1 ring-violet-700'
-                      : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                    }`}
-                >
-                  <span>{c.name}</span>
-                  <span className={`text-[10px] rounded-full px-1.5 py-0.2 ${selectedCompany.toLowerCase() === c.name.toLowerCase() ? 'bg-violet-800 text-violet-100' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                    {c.question_count}
-                  </span>
-                </button>
-              ))}
-              {customCompanyInput.trim() && filteredCompanies.length === 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedCompany(customCompanyInput.trim());
-                    setCompanyPage(1);
-                    setCustomCompanyInput('');
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                >
-                  <span>No match found — Use "{customCompanyInput.trim()}" as Startup & pick Industry</span>
-                </button>
-              )}
-            </div>
-
-            {/* Custom Company Search & Set */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (customCompanyInput.trim()) {
-                  setSelectedCompany(customCompanyInput.trim());
-                  setCompanyPage(1);
-                  setCustomCompanyInput('');
-                }
-              }}
-              className="flex items-center gap-2 pt-2 border-t border-slate-100"
-            >
-              <input
-                value={customCompanyInput}
-                onChange={(e) => setCustomCompanyInput(e.target.value)}
-                placeholder="Type to search or add any company (if not listed, pick Startup & Industry)..."
-                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 flex-1"
-              />
-              <button
-                type="submit"
-                className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition shadow-sm shrink-0"
-              >
-                Set Target Company
-              </button>
-            </form>
-
-            {/* Startup / Unindexed Company Industry Search */}
-            {isStartupOrUnindexed && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-emerald-900">
-                    Startup Industry Search {selectedIndustry ? `· Selected: ${selectedIndustry}` : '(Select or type an industry)'}
+            {/* Step 1: Company or Startup (+ Industry Suggestions) */}
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-700 text-[11px] font-bold text-white">1</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Choose Company or Startup
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEntityMode('company');
+                      if (selectedCompany.toLowerCase() === 'startup' && companies.length > 0) {
+                        setSelectedCompany(companies[0].name);
+                      }
+                      setSelectedIndustry('');
+                      setCompanyPage(1);
+                    }}
+                    className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                      entityMode === 'company'
+                        ? 'bg-white text-violet-800 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Company
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEntityMode('startup');
+                      setSelectedCompany('Startup');
+                      setCompanyPage(1);
+                    }}
+                    className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+                      entityMode === 'startup'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Startup
+                  </button>
+                </div>
+              </div>
+
+              {entityMode === 'company' ? (
+                <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (customCompanyInput.trim()) {
+                        setSelectedCompany(customCompanyInput.trim());
+                        setSelectedIndustry('');
+                        setCompanyPage(1);
+                        setCustomCompanyInput('');
+                      }
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Search className="h-4 w-4 text-slate-400 shrink-0" />
+                    <input
+                      value={customCompanyInput}
+                      onChange={(e) => setCustomCompanyInput(e.target.value)}
+                      placeholder="Type company name for suggestions (e.g. Google, Stripe, Adobe)..."
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 flex-1"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition shrink-0"
+                    >
+                      Select Company
+                    </button>
+                  </form>
+
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                    {filteredCompanies.map((c) => (
+                      <button
+                        key={c.name}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCompany(c.name);
+                          setSelectedIndustry('');
+                          setCompanyPage(1);
+                        }}
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                          selectedCompany.toLowerCase() === c.name.toLowerCase()
+                            ? 'bg-violet-700 text-white shadow-sm ring-1 ring-violet-700'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>{c.name}</span>
+                        <span
+                          className={`text-[10px] rounded-full px-1.5 py-0.2 ${
+                            selectedCompany.toLowerCase() === c.name.toLowerCase()
+                              ? 'bg-violet-800 text-violet-100'
+                              : 'bg-slate-200 text-slate-600'
+                          }`}
+                        >
+                          {c.question_count}
+                        </span>
+                      </button>
+                    ))}
+                    {customCompanyInput.trim() && filteredCompanies.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEntityMode('startup');
+                          setSelectedCompany('Startup');
+                          setCompanyPage(1);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 hover:bg-emerald-100"
+                      >
+                        <span>"{customCompanyInput.trim()}" not indexed — Switch to Startup & pick Industry</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-emerald-900">
+                      Startup Industry Suggestions {selectedIndustry ? `· Selected: ${selectedIndustry}` : '(Type or pick an industry)'}
+                    </span>
+                  </div>
                   <input
                     value={industrySearchInput}
                     onChange={(e) => {
@@ -691,32 +735,231 @@ export function QuestionBankPage() {
                       if (e.target.value.trim()) setSelectedIndustry(e.target.value.trim());
                     }}
                     placeholder="Search or type industry (e.g. Fintech, AI/GenAI, SaaS, Healthcare, E-Commerce)..."
-                    className="flex-1 min-w-[220px] rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-emerald-600 focus:outline-none"
+                    className="w-full rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:border-emerald-600 focus:outline-none"
                   />
+                  {filteredIndustries.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {filteredIndustries.map((ind) => (
+                        <button
+                          key={ind}
+                          type="button"
+                          onClick={() => {
+                            setSelectedIndustry(ind);
+                            setIndustrySearchInput(ind);
+                          }}
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
+                            selectedIndustry.toLowerCase() === ind.toLowerCase()
+                              ? 'bg-emerald-700 text-white'
+                              : 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100'
+                          }`}
+                        >
+                          {ind}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {filteredIndustries.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {filteredIndustries.map((ind) => (
-                      <button
-                        key={ind}
-                        type="button"
-                        onClick={() => {
-                          setSelectedIndustry(ind);
-                          setIndustrySearchInput(ind);
-                        }}
-                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
-                          selectedIndustry.toLowerCase() === ind.toLowerCase()
-                            ? 'bg-emerald-700 text-white'
-                            : 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-100'
-                        }`}
-                      >
-                        {ind}
-                      </button>
+              )}
+            </div>
+
+            {/* Step 2 & Step 3: Role & YoE */}
+            <div className="grid gap-3 pt-2 border-t border-slate-100 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-700 text-[11px] font-bold text-white">2</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Role</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={availableRoles.includes(targetRole) ? targetRole : (targetRole === 'custom' ? 'custom' : (availableRoles[0] || 'custom'))}
+                    onChange={(e) => handleRoleChange(e.target.value)}
+                    className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none flex-1 min-w-[180px]"
+                  >
+                    {availableRoles.map((r) => (
+                      <option key={r} value={r}>{r}</option>
                     ))}
-                  </div>
-                )}
+                    <option value="custom">-- Custom Role --</option>
+                  </select>
+                  {targetRole === 'custom' && (
+                    <input
+                      value={customRoleInput}
+                      onChange={(e) => {
+                        setCustomRoleInput(e.target.value);
+                        handleRoleChange('custom');
+                      }}
+                      placeholder="e.g. Senior Financial Analyst..."
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs flex-1 min-w-[160px] focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                    />
+                  )}
+                </div>
               </div>
-            )}
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-700 text-[11px] font-bold text-white">3</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Years of Experience (YoE)</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { label: 'Intern (0y)', val: 0.0 },
+                    { label: 'Entry (1.5y)', val: 1.5 },
+                    { label: 'Mid (3.5y)', val: 3.5 },
+                    { label: 'Senior (6y)', val: 6.0 },
+                    { label: 'Staff (9y+)', val: 9.0 },
+                  ].map((tier) => (
+                    <button
+                      key={tier.label}
+                      type="button"
+                      onClick={() => setTargetYoE(tier.val)}
+                      className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                        targetYoE === tier.val
+                          ? 'bg-violet-700 text-white font-semibold shadow-xs'
+                          : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {tier.label}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="30"
+                    value={targetYoE}
+                    onChange={(e) => setTargetYoE(parseFloat(e.target.value) || 0)}
+                    className="w-14 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold text-slate-800 text-center"
+                  />
+                  <span className="text-slate-400 text-[10px]">yrs</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4: Skills */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-700 text-[11px] font-bold text-white">4</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Skills</span>
+              </div>
+              <input
+                value={targetSkills}
+                onChange={(e) => setTargetSkills(e.target.value)}
+                placeholder="e.g. Financial Modeling, DCF, Variance Analysis or Python, Distributed Systems, RAG"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs focus:ring-1 focus:ring-violet-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Step 5: Generate Questions (with Three-Dots Loading Effect) */}
+            <div className="space-y-2.5 pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-700 text-[11px] font-bold text-white">5</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Generate</span>
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                    <span className="font-semibold text-slate-700">Max Questions:</span>
+                    <select
+                      value={scrapeLimit}
+                      onChange={(e) => setScrapeLimit(parseInt(e.target.value, 10))}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                    >
+                      <option value={30}>30 questions</option>
+                      <option value={50}>50 questions</option>
+                      <option value={100}>100 questions (Max)</option>
+                      <option value={150}>150 questions (Exhaustive)</option>
+                    </select>
+                  </label>
+
+                  <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                    {['LeetCode', 'GeeksforGeeks', 'Reddit', 'Open Web'].map((plat) => {
+                      const isSelected = scrapePlatforms.includes(plat);
+                      return (
+                        <button
+                          key={plat}
+                          type="button"
+                          onClick={() => togglePlatform(plat)}
+                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                            isSelected
+                              ? 'bg-violet-600 text-white shadow-xs'
+                              : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          {plat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleLiveScrape()}
+                    disabled={scrapingLive}
+                    className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-800 disabled:opacity-80"
+                    title="Fetch as many relevant questions as possible for your exact selections"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    {scrapingLive ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>Generating Relevant Questions</span>
+                        <span className="inline-flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-bounce [animation-delay:-0.3s]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-bounce [animation-delay:-0.15s]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-bounce" />
+                        </span>
+                      </span>
+                    ) : (
+                      <span>Generate Relevant Questions</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateNemotron()}
+                    disabled={generatingNemotron}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition"
+                    title="Generate dynamic search dorks and synthesize questions across canonical rounds"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>{generatingNemotron ? 'Synthesizing...' : 'Nemotron Dorks'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportCleanCsv()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    title="Export currently loaded questions as clean CSV"
+                  >
+                    <Download className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {(scrapingLive || generatingNemotron) && (
+                <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50/80 px-4 py-3 text-xs font-medium text-violet-900">
+                  <div className="flex items-center gap-2.5">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-violet-600 animate-bounce [animation-delay:-0.3s]" />
+                      <span className="h-2 w-2 rounded-full bg-violet-600 animate-bounce [animation-delay:-0.15s]" />
+                      <span className="h-2 w-2 rounded-full bg-violet-600 animate-bounce" />
+                    </span>
+                    <span>
+                      {scrapingLive
+                        ? `Searching & generating relevant questions for ${entityMode === 'startup' ? `Startup (${selectedIndustry || 'Any Industry'})` : selectedCompany} · ${effectiveRole} · ${targetYoE} yrs`
+                        : `Synthesizing Nemotron search dorks & rounds for ${selectedCompany} · ${effectiveRole}`}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-violet-700">Please wait</span>
+                </div>
+              )}
+
+              {scrapeSuccessMsg && !scrapingLive && (
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800">
+                  <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span>{scrapeSuccessMsg}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Canonical 5-Round Filter Pills */}
@@ -789,181 +1032,7 @@ export function QuestionBankPage() {
             </button>
           </form>
 
-          {/* Intelligence Action & Customization Bar */}
-          <div className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50/70 to-indigo-50/50 p-4 shadow-sm space-y-3.5">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-violet-700" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-violet-900">
-                    NVIDIA Nemotron Dynamic Dork Engine & Live Open-Web Scraper
-                  </span>
-                </div>
-                <span className="text-[11px] text-violet-700 font-semibold bg-violet-100/70 px-2 py-0.5 rounded-full">
-                  Parameter-Grounded Extraction
-                </span>
-              </div>
-              <p className="text-xs text-slate-600">
-                Dynamically generates noise-filtered round search dorks and executes live multi-platform extraction for <strong>{selectedCompany}</strong> ({effectiveRole}, {targetYoE} yrs).
-              </p>
-            </div>
-
-            {/* Row 1: Role, Seniority, and YoE Presets */}
-            <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-violet-100">
-              <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                <span className="font-semibold text-slate-800">Role:</span>
-                <select
-                  value={availableRoles.includes(targetRole) ? targetRole : (targetRole === 'custom' ? 'custom' : (availableRoles[0] || 'custom'))}
-                  onChange={(e) => handleRoleChange(e.target.value)}
-                  className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                >
-                  {availableRoles.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                  <option value="custom">-- Custom Role --</option>
-                </select>
-                {targetRole === 'custom' && (
-                  <input
-                    value={customRoleInput}
-                    onChange={(e) => {
-                      setCustomRoleInput(e.target.value);
-                      handleRoleChange('custom');
-                    }}
-                    placeholder="e.g. Senior Financial Analyst..."
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs w-44 focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                  />
-                )}
-              </label>
-
-              <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                <span className="font-semibold text-slate-800">Seniority & YoE:</span>
-                <div className="flex items-center gap-1">
-                  {[
-                    { label: 'Intern (0y)', val: 0.0 },
-                    { label: 'Entry (1.5y)', val: 1.5 },
-                    { label: 'Mid (3.5y)', val: 3.5 },
-                    { label: 'Senior (6y)', val: 6.0 },
-                    { label: 'Staff (9y+)', val: 9.0 },
-                  ].map((tier) => (
-                    <button
-                      key={tier.label}
-                      type="button"
-                      onClick={() => setTargetYoE(tier.val)}
-                      className={`rounded px-2 py-0.5 text-[11px] font-medium transition ${targetYoE === tier.val
-                          ? 'bg-violet-700 text-white font-semibold shadow-xs'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                      {tier.label}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  max="30"
-                  value={targetYoE}
-                  onChange={(e) => setTargetYoE(parseFloat(e.target.value) || 0)}
-                  className="w-14 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-800 text-center"
-                />
-                <span className="text-slate-400 text-[10px]">yrs</span>
-              </div>
-            </div>
-
-            {/* Row 2: Target Skills */}
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700 w-full">
-                <span className="font-semibold text-slate-800 whitespace-nowrap">Target Skills:</span>
-                <input
-                  value={targetSkills}
-                  onChange={(e) => setTargetSkills(e.target.value)}
-                  placeholder="e.g. Financial Modeling, DCF, Variance Analysis or Python, Concurrency"
-                  className="w-full rounded border border-slate-300 bg-white px-2.5 py-1 text-xs focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                />
-              </label>
-            </div>
-
-            {/* Row 3: Scrape Depth, Sources & Action Buttons (uses active Round & Difficulty filters above) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-violet-100">
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                  <span className="font-semibold text-slate-800">Limit:</span>
-                  <select
-                    value={scrapeLimit}
-                    onChange={(e) => setScrapeLimit(parseInt(e.target.value, 10))}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                  >
-                    <option value={15}>15 questions (Quick)</option>
-                    <option value={30}>30 questions (Standard)</option>
-                    <option value={50}>50 questions (Deep)</option>
-                    <option value={100}>100 questions (Max)</option>
-                    <option value={150}>150 questions (Exhaustive)</option>
-                  </select>
-                </label>
-
-                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                  <span className="font-semibold text-slate-800">Sources:</span>
-                  {['LeetCode', 'GeeksforGeeks', 'Reddit', 'Open Web'].map((plat) => {
-                    const isSelected = scrapePlatforms.includes(plat);
-                    return (
-                      <button
-                        key={plat}
-                        type="button"
-                        onClick={() => togglePlatform(plat)}
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${isSelected
-                            ? 'bg-violet-600 text-white shadow-xs'
-                            : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
-                          }`}
-                      >
-                        {plat}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleGenerateNemotron()}
-                  disabled={generatingNemotron}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-violet-800 disabled:opacity-50"
-                  title="Generate dynamic search dorks and synthesize questions across canonical rounds"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>{generatingNemotron ? 'Synthesizing...' : '⚡ Generate Nemotron Dorks & Rounds'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleLiveScrape()}
-                  disabled={scrapingLive}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400 bg-white px-3 py-1.5 text-xs font-bold text-violet-800 shadow-sm hover:bg-violet-50 disabled:opacity-50 transition"
-                  title="Search and fetch live parameter-grounded questions for these exact settings"
-                >
-                  <Search className="h-3.5 w-3.5 text-violet-700" />
-                  <span>{scrapingLive ? 'Searching & Scraping...' : '🔍 Search & Live Scrape'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => exportCleanCsv()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  title="Export currently loaded questions as clean CSV"
-                >
-                  <Download className="h-3.5 w-3.5 text-slate-500" />
-                  <span>📥 Export CSV</span>
-                </button>
-              </div>
-            </div>
-
-            {scrapeSuccessMsg && (
-              <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs font-medium text-emerald-800 animate-fadeIn">
-                <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
-                <span>{scrapeSuccessMsg}</span>
-              </div>
-            )}
-          </div>
+          {/* (Guided Flow above handles Company/Startup, Industry, Role, YoE, Skills, and Generate) */}
 
           {/* Nemotron Dynamic Intelligence Viewer */}
           {dynamicDorks && (
