@@ -131,6 +131,7 @@ export function QuestionBankPage() {
   const [industryDropdownOpen, setIndustryDropdownOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
   const [roleSearchInput, setRoleSearchInput] = useState('');
+  const [yoeDropdownOpen, setYoeDropdownOpen] = useState(false);
   const [dynamicRounds, setDynamicRounds] = useState<{ id: string; label: string }[]>(CANONICAL_ROUNDS);
 
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
@@ -999,25 +1000,60 @@ export function QuestionBankPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-                  <select
-                    value={targetYoE === null ? '' : ([0, 1.5, 3.5, 6, 9].includes(targetYoE) ? String(targetYoE) : 'custom')}
-                    onChange={(e) => {
-                      if (e.target.value === '') {
-                        setTargetYoE(null);
-                      } else if (e.target.value !== 'custom') {
-                        setTargetYoE(parseFloat(e.target.value));
-                      }
-                    }}
-                    className="flex-1 min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-800 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-                  >
-                    <option value="">Select experience level...</option>
-                    <option value="0">Intern (0 years)</option>
-                    <option value="1.5">Entry Level (1.5 years)</option>
-                    <option value="3.5">Mid Level (3.5 years)</option>
-                    <option value="6">Senior (6 years)</option>
-                    <option value="9">Staff / Principal (9+ years)</option>
-                    <option value="custom">Custom Years</option>
-                  </select>
+                  <div className="relative flex-1 min-w-[220px]">
+                    <button
+                      type="button"
+                      onClick={() => setYoeDropdownOpen((prev) => !prev)}
+                      onBlur={() => setTimeout(() => setYoeDropdownOpen(false), 150)}
+                      className="flex w-full items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-xs font-medium text-slate-800 focus:border-violet-600 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                    >
+                      <span>
+                        {targetYoE === null
+                          ? 'Select experience level...'
+                          : targetYoE === 0
+                            ? 'Intern (0 years)'
+                            : targetYoE === 1.5
+                              ? 'Entry Level (1.5 years)'
+                              : targetYoE === 3.5
+                                ? 'Mid Level (3.5 years)'
+                                : targetYoE === 6
+                                  ? 'Senior (6 years)'
+                                  : targetYoE === 9
+                                    ? 'Staff / Principal (9+ years)'
+                                    : `${targetYoE} years (Custom)`}
+                      </span>
+                      <span className="text-slate-400">▾</span>
+                    </button>
+
+                    {yoeDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                        {[
+                          { label: 'Intern (0 years)', val: 0 },
+                          { label: 'Entry Level (1.5 years)', val: 1.5 },
+                          { label: 'Mid Level (3.5 years)', val: 3.5 },
+                          { label: 'Senior (6 years)', val: 6 },
+                          { label: 'Staff / Principal (9+ years)', val: 9 },
+                        ].map((opt) => (
+                          <button
+                            key={opt.val}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setTargetYoE(opt.val);
+                              setYoeDropdownOpen(false);
+                            }}
+                            className={`flex w-full items-center px-3 py-2 text-left text-xs transition ${
+                              targetYoE === opt.val
+                                ? 'bg-violet-50 font-semibold text-violet-800'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>{opt.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5">
                     <input
                       type="number"
