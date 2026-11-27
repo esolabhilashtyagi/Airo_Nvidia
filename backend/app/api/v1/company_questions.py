@@ -84,6 +84,7 @@ class RoundQuestionsRequest(BaseModel):
 
 class LiveScrapeRequest(BaseModel):
     company: str = "Google"
+    industry: Optional[str] = None
     role: str = "Software Engineer"
     yoe: Optional[float] = 3.5
     skills: Optional[List[str]] = Field(default_factory=list)
@@ -274,6 +275,7 @@ async def trigger_live_scrape(
     """Trigger live web extraction and store verified questions."""
     result = await InterviewIntelligenceBridge.trigger_live_scrape(
         company=payload.company,
+        industry=payload.industry,
         role=payload.role,
         yoe=payload.yoe if payload.yoe is not None else 3.5,
         skills=payload.skills or [],

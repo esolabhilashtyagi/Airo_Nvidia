@@ -119,9 +119,17 @@ export function QuestionBankPage() {
   const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [customCompanyInput, setCustomCompanyInput] = useState<string>('');
+  const [isStartupMode, setIsStartupMode] = useState<boolean>(false);
+  const [targetIndustry, setTargetIndustry] = useState<string>('');
+  const [customIndustryInput, setCustomIndustryInput] = useState<string>('');
+  const [industryOptions, setIndustryOptions] = useState<string[]>([]);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const effectiveRole = targetRole === 'custom' ? customRoleInput.trim() || 'Software Engineer' : targetRole;
+  const effectiveIndustry = targetIndustry === 'custom' ? customIndustryInput.trim() : targetIndustry;
+  const typedCompanyNotIndexed =
+    customCompanyInput.trim().length > 0 &&
+    !companies.some((c) => c.name.toLowerCase() === customCompanyInput.trim().toLowerCase());
 
   const [scrapeLimit, setScrapeLimit] = useState<number>(50);
   const [scrapePlatforms, setScrapePlatforms] = useState<string[]>([
@@ -196,14 +204,17 @@ export function QuestionBankPage() {
     }
   }
 
-  async function handleLiveScrape() {
+  async function handleLiveScrape(overrideCompany?: string, overrideIndustry?: string) {
     setScrapingLive(true);
     setScrapeSuccessMsg('');
     setError('');
+    const targetComp = (overrideCompany ?? selectedCompany).trim() || 'Google';
+    const targetInd = overrideIndustry ?? (isStartupMode ? effectiveIndustry : '');
     try {
       const skillsArr = targetSkills.split(',').map((s) => s.trim()).filter(Boolean);
       const res = await companyIntelApi.triggerLiveScrape({
-        company: selectedCompany,
+        company: targetComp,
+        industry: targetInd || undefined,
         role: effectiveRole,
         yoe: targetYoE,
         skills: skillsArr,
@@ -220,9 +231,15 @@ export function QuestionBankPage() {
       const dbStatus = countStored > 0
         ? `saved ${countStored} new records into database`
         : (countExtracted > 0 ? `all ${countExtracted} questions verified & synced in database (deduplicated)` : 'no new questions found');
+      const indLabel = targetInd ? ` · ${targetInd}` : '';
       setScrapeSuccessMsg(
-        `✅ Live Scrape Complete: Scraped ${countSources} web sources, extracted ${countExtracted} authentic questions for ${selectedCompany} (${effectiveRole}, ${targetYoE} yrs YoE) and ${dbStatus}!`
+        `✅ Live Scrape Complete: Scraped ${countSources} web sources, extracted ${countExtracted} relevant questions for ${targetComp}${indLabel} (${effectiveRole}, ${targetYoE} yrs YoE) and ${dbStatus}!`
       );
+      if (countStored > 0) {
+        void companyIntelApi.listCompanies().then((comps) => {
+          if (comps?.length) setCompanies(comps);
+        }).catch(() => {});
+      }
       void loadCompanyQuestions();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Live scraping encountered an issue.');
@@ -316,7 +333,12 @@ export function QuestionBankPage() {
           companyIntelApi.listCategories(),
         ]);
         if (mounted) {
-          if (comps?.length) setCompanies(comps);
+          if (comps?.length) {
+            setCompanies(comps);
+            const inds = Array.from(new Set(comps.map((c) => c.industry).filter(Boolean)));
+            setIndustryOptions(inds);
+            if (!targetIndustry && inds.length) setTargetIndustry(inds[0]);
+          }
           if (roles?.length) setAvailableRoles(roles);
           if (cats?.length) setAvailableCategories(cats);
         }
@@ -588,21 +610,32 @@ export function QuestionBankPage() {
                   key={c.name}
                   type="button"
                   onClick={() => {
+                    setIsStartupMode(false);
                     setSelectedCompany(c.name);
                     setCompanyPage(1);
                   }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${selectedCompany.toLowerCase() === c.name.toLowerCase()
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${!isStartupMode && selectedCompany.toLowerCase() === c.name.toLowerCase()
                       ? 'bg-violet-700 text-white shadow-sm ring-1 ring-violet-700'
                       : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                     }`}
                 >
                   <span>{c.name}</span>
-                  <span className={`text-[10px] rounded-full px-1.5 py-0.2 ${selectedCompany.toLowerCase() === c.name.toLowerCase() ? 'bg-violet-800 text-violet-100' : 'bg-slate-200 text-slate-600'
+                  <span className={`text-[10px] rounded-full px-1.5 py-0.2 ${!isStartupMode && selectedCompany.toLowerCase() === c.name.toLowerCase() ? 'bg-violet-800 text-violet-100' : 'bg-slate-200 text-slate-600'
                     }`}>
                     {c.question_count}
                   </span>
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setIsStartupMode((prev) => !prev)}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${isStartupMode || typedCompanyNotIndexed
+                    ? 'bg-indigo-700 text-white shadow-sm ring-1 ring-indigo-700'
+                    : 'border border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                  }`}
+              >
+                <span>Startup / Industry Search</span>
+              </button>
             </div>
 
             {/* Custom Company Search & Set */}
@@ -610,9 +643,16 @@ export function QuestionBankPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 if (customCompanyInput.trim()) {
-                  setSelectedCompany(customCompanyInput.trim());
+                  const typed = customCompanyInput.trim();
+                  const exists = companies.some((c) => c.name.toLowerCase() === typed.toLowerCase());
+                  setSelectedCompany(typed);
                   setCompanyPage(1);
-                  setCustomCompanyInput('');
+                  if (!exists) {
+                    setIsStartupMode(true);
+                  } else {
+                    setIsStartupMode(false);
+                    setCustomCompanyInput('');
+                  }
                 }
               }}
               className="flex items-center gap-2 pt-2 border-t border-slate-100"
@@ -620,7 +660,7 @@ export function QuestionBankPage() {
               <input
                 value={customCompanyInput}
                 onChange={(e) => setCustomCompanyInput(e.target.value)}
-                placeholder="Or type any company (e.g. Adobe, Airbnb, Swiggy, Snowflake, Custom Startup)..."
+                placeholder="Or type any company (e.g. Adobe, Swiggy, Custom Startup)..."
                 className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-600 flex-1"
               />
               <button
@@ -630,6 +670,105 @@ export function QuestionBankPage() {
                 Set Target Company
               </button>
             </form>
+
+            {/* Startup / Custom Company -> Industry -> Role -> YoE -> Skills -> Search Flow */}
+            {(isStartupMode || typedCompanyNotIndexed) && (
+              <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3.5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-indigo-950">
+                    Startup / Industry Search {typedCompanyNotIndexed ? `— "${customCompanyInput.trim()}" not indexed yet` : ''}
+                  </p>
+                  <span className="text-[11px] font-medium text-indigo-700">
+                    Industry → Role → YoE → Skills → Search
+                  </span>
+                </div>
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-semibold text-slate-700">Industry</span>
+                    <select
+                      value={industryOptions.includes(targetIndustry) ? targetIndustry : (targetIndustry === 'custom' ? 'custom' : (industryOptions[0] || 'custom'))}
+                      onChange={(e) => setTargetIndustry(e.target.value)}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+                    >
+                      {industryOptions.map((ind) => (
+                        <option key={ind} value={ind}>{ind}</option>
+                      ))}
+                      <option value="custom">-- Type Custom Industry --</option>
+                    </select>
+                    {targetIndustry === 'custom' && (
+                      <input
+                        value={customIndustryInput}
+                        onChange={(e) => setCustomIndustryInput(e.target.value)}
+                        placeholder="e.g. FinTech, HealthTech, GenAI..."
+                        className="mt-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none"
+                      />
+                    )}
+                  </label>
+
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-semibold text-slate-700">Role</span>
+                    <select
+                      value={availableRoles.includes(targetRole) ? targetRole : (targetRole === 'custom' ? 'custom' : (availableRoles[0] || 'custom'))}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+                    >
+                      {availableRoles.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                      <option value="custom">-- Custom Role --</option>
+                    </select>
+                    {targetRole === 'custom' && (
+                      <input
+                        value={customRoleInput}
+                        onChange={(e) => setCustomRoleInput(e.target.value)}
+                        placeholder="e.g. Founding Engineer, Product Manager..."
+                        className="mt-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none"
+                      />
+                    )}
+                  </label>
+
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-semibold text-slate-700">YoE (Years)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="30"
+                      value={targetYoE}
+                      onChange={(e) => setTargetYoE(parseFloat(e.target.value) || 0)}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold focus:border-indigo-500 focus:outline-none"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1 text-xs">
+                    <span className="font-semibold text-slate-700">Skills</span>
+                    <input
+                      value={targetSkills}
+                      onChange={(e) => setTargetSkills(e.target.value)}
+                      placeholder="e.g. Python, FastAPI, System Design..."
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs focus:border-indigo-500 focus:outline-none"
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={scrapingLive}
+                    onClick={() => {
+                      const ind = effectiveIndustry || 'Technology';
+                      const compName = customCompanyInput.trim() || `${ind} Startup`;
+                      setSelectedCompany(compName);
+                      setCompanyPage(1);
+                      void handleLiveScrape(compName, ind);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-800 disabled:opacity-50 transition"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span>{scrapingLive ? 'Searching & Fetching Questions...' : 'Search Questions'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Canonical 5-Round Filter Pills */}

@@ -130,6 +130,7 @@ export const companyIntelApi = {
 
   triggerLiveScrape: async (payload: {
     company: string;
+    industry?: string;
     role?: string;
     yoe?: number;
     skills?: string[];

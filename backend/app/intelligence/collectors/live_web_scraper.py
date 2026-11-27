@@ -343,6 +343,7 @@ class LiveWebScraper:
         keyword: str = "",
         limit: Optional[int] = 30,
         max_pages: int = 3,
+        industry: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Executes parameter-driven multi-engine discovery across the open web and platform archives.
@@ -351,7 +352,8 @@ class LiveWebScraper:
         Guarantees 0% noise and guarantees database persistence.
         """
         is_all = not company or company.strip().lower() in ["all", "all companies", "all mncs", "all startups", ""]
-        comp_target = "Google" if is_all else company.strip()
+        industry_target = industry.strip() if industry and industry.strip() else None
+        comp_target = (f"{industry_target} Startup" if industry_target else "Google") if is_all else company.strip()
         role_target = role.strip() if role and role.lower() not in ["", "all", "all roles"] else "Software Development Engineer II"
         yoe_target = float(yoe) if yoe is not None else 3.5
         skills_target = [s.strip() for s in (skills or []) if s.strip()]
@@ -691,7 +693,7 @@ class LiveWebScraper:
         # Generates corporate/domain-accurate practice scenarios (never mislabeled
         # as verified company leaks) with per-question skills and YoE calibration.
         # =========================================================================
-        if len(candidate_questions) < limit_target and role_attrs.get("role_family") == "FINANCE":
+        if len(candidate_questions) < limit_target and (role_attrs.get("role_family") == "FINANCE" or industry_target):
             try:
                 from app.integrations.ai.provider_factory import get_ai_provider
                 from pydantic import BaseModel, Field as PydanticField
@@ -701,7 +703,7 @@ class LiveWebScraper:
                     category: str
                     difficulty: str
                     question_text: str
-                    skills_tested: List[str] = Field(default_factory=list) if False else PydanticField(default_factory=list)
+                    skills_tested: List[str] = PydanticField(default_factory=list)
 
                 class _FinanceBatch(BaseModel):
                     questions: List[_FinanceQ]
@@ -709,32 +711,41 @@ class LiveWebScraper:
                 provider = get_ai_provider()
                 if provider.is_available():
                     ai_count = min(15, limit_target - len(candidate_questions))
-                    fin_prompt = (
-                        f"Generate {ai_count} realistic, high-signal Corporate Finance / FP&A / Business Partnering "
-                        f"interview practice questions for '{comp_target}' targeting '{role_target}' ({yoe_target} yrs YoE).\n"
-                        "STRICT RULES:\n"
-                        "1. Focus strictly on Corporate Finance, FP&A, 3-Statement Modeling, DCF, Variance Analysis, "
-                        "Budgeting & Forecasting, Accounting (GAAP/IFRS), Business Strategy, and Stakeholder Management.\n"
-                        "2. NEVER include personal finance, retirement, mortgages, cars, or retail stock-picking.\n"
-                        "3. Map round_number 1-5 to: 1=Finance Fundamentals & FP&A, 2=Financial Modeling & Excel, "
-                        "3=Business Case & Strategic Finance, 4=Analytical Problem Solving & Stakeholder Management, 5=Behavioral & Leadership.\n"
-                        "4. Assign 2-3 specific skills actually tested by EACH individual question."
-                    )
+                    ind_ctx = f" in the '{industry_target}' industry" if industry_target else ""
+                    skills_ctx = f" focusing on skills: {', '.join(skills_target)}" if skills_target else ""
+                    if role_attrs.get("role_family") == "FINANCE":
+                        role_prompt = (
+                            f"Generate {ai_count} realistic, high-signal Corporate Finance / FP&A / Business Partnering "
+                            f"interview practice questions for '{comp_target}'{ind_ctx} targeting '{role_target}' ({yoe_target} yrs YoE){skills_ctx}.\n"
+                            "STRICT RULES:\n"
+                            "1. Focus strictly on Corporate Finance, FP&A, 3-Statement Modeling, DCF, Variance Analysis, "
+                            "Budgeting & Forecasting, Accounting (GAAP/IFRS), Business Strategy, and Stakeholder Management.\n"
+                            "2. NEVER include personal finance, retirement, mortgages, cars, or retail stock-picking.\n"
+                            "3. Map round_number 1-5 to: 1=Finance Fundamentals & FP&A, 2=Financial Modeling & Excel, "
+                            "3=Business Case & Strategic Finance, 4=Analytical Problem Solving & Stakeholder Management, 5=Behavioral & Leadership.\n"
+                            "4. Assign 2-3 specific skills actually tested by EACH individual question."
+                        )
+                    else:
+                        role_prompt = (
+                            f"Generate {ai_count} realistic, high-signal, trendy interview practice questions for '{comp_target}'{ind_ctx} "
+                            f"targeting '{role_target}' ({yoe_target} yrs YoE){skills_ctx}.\n"
+                            "STRICT RULES:\n"
+                            "1. Ground every question in real-world challenges of the specified industry, role, YoE seniority, and skills.\n"
+                            "2. Map round_number 1-5 progressively from Screening/Foundations (1), Core Craft/Execution (2), Applied Design/Case (3), Architecture/Strategy (4), Leadership/Behavioral (5).\n"
+                            "3. Assign 2-3 specific skills actually tested by EACH individual question."
+                        )
                     ai_resp = await provider.generate_structured(
-                        fin_prompt,
+                        role_prompt,
                         _FinanceBatch,
-                        system_instruction="You are a senior Corporate Finance hiring manager. Return clean JSON.",
+                        system_instruction="You are a senior hiring manager. Return clean JSON matching the schema.",
                         temperature=0.3,
                     )
                     if ai_resp.is_success and ai_resp.structured_data:
                         parsed_fin = _FinanceBatch.model_validate(ai_resp.structured_data)
-                        fin_round_names = {
-                            1: "Round 1: Finance Fundamentals & FP&A",
-                            2: "Round 2: Financial Modeling & Excel",
-                            3: "Round 3: Business Case & Strategic Finance",
-                            4: "Round 4: Analytical Problem Solving & Stakeholder Management",
-                            5: "Round 5: Behavioral & Leadership",
-                        }
+                        dynamic_rounds_map, _ = DynamicInterviewEngine.generate_dynamic_blueprint(
+                            comp_target, industry_target, role_target, yoe_target, skills_target
+                        )
+                        round_name_lookup = {r["number"]: r["name"] for r in dynamic_rounds_map}
                         scraped_sources_count += 1
                         for fq in parsed_fin.questions:
                             cleaned_q_text = strip_question_wrappers(fq.question_text)
@@ -742,13 +753,14 @@ class LiveWebScraper:
                             if q_hash not in seen_hashes:
                                 seen_hashes.add(q_hash)
                                 rn = fq.round_number
-                                r_name = fin_round_names.get(rn, fin_round_names[1])
-                                cat = self.nlp.classify_question(cleaned_q_text, round_number=rn, interview_round=r_name, role_family="FINANCE")["category"]
+                                r_name = round_name_lookup.get(rn, f"Round {rn}: Technical Assessment")
+                                cat = self.nlp.classify_question(cleaned_q_text, round_number=rn, interview_round=r_name, role_family=role_attrs.get("role_family"))["category"]
                                 candidate_questions.append({
                                     "company_name": comp_target,
+                                    "industry": industry_target or "Technology",
                                     "job_role": role_target,
                                     "question_text": cleaned_q_text,
-                                    "question_category": cat,
+                                    "question_category": cat if role_attrs.get("role_family") == "FINANCE" else (fq.category or cat),
                                     "difficulty": diff_target or fq.difficulty or "Medium",
                                     "round_number": rn,
                                     "interview_round": r_name,
@@ -760,15 +772,15 @@ class LiveWebScraper:
                                     "years_of_experience": yoe_target,
                                 })
             except Exception as e:
-                logger.debug(f"Finance AI synthesis notice: {e}")
+                logger.debug(f"Role/Industry AI synthesis notice: {e}")
 
         if len(candidate_questions) < limit_target:
             try:
                 tier_label, _, _ = DynamicInterviewEngine.infer_seniority_tier(yoe_target)
                 dynamic_rounds, _ = DynamicInterviewEngine.generate_dynamic_blueprint(
-                    comp_target, None, role_target, yoe_target, skills_target
+                    comp_target, industry_target, role_target, yoe_target, skills_target
                 )
-                comp_profile = DynamicInterviewEngine.analyze_company_profile(comp_target, None)
+                comp_profile = DynamicInterviewEngine.analyze_company_profile(comp_target, industry_target)
 
                 rounds_to_fill = [r for r in dynamic_rounds if (round_target is None or r.get("number") == round_target)]
                 needed_per_round = max(2, (limit_target - len(candidate_questions) + len(rounds_to_fill) - 1) // max(1, len(rounds_to_fill)))

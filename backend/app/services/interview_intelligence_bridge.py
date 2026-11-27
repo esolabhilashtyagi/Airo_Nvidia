@@ -713,6 +713,7 @@ class InterviewIntelligenceBridge:
     async def trigger_live_scrape(
         cls,
         company: str = "Google",
+        industry: Optional[str] = None,
         role: str = "Software Engineer",
         yoe: float = 3.5,
         skills: Optional[List[str]] = None,
@@ -729,6 +730,7 @@ class InterviewIntelligenceBridge:
         scraper = LiveWebScraper()
         res = await scraper.scrape_live_questions(
             company=company,
+            industry=industry,
             role=role,
             yoe=yoe,
             skills=skills or [],
