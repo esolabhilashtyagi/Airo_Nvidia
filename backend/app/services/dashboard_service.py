@@ -83,7 +83,7 @@ class DashboardService:
             ),
             DashboardMetricCard(
                 title="Resume Score",
-                value=f"{round(latest_resume_score, 1)}/100" if latest_resume_score_value is not None else "Pending",
+                value=f"{round(latest_resume_score, 1)}%" if latest_resume_score_value is not None else "Pending",
                 change_text="Completed resume analysis" if latest_resume_score_value is not None else "Upload resume to score",
                 change_type="positive" if latest_resume_score >= 75 else "neutral",
                 icon="FileText"
